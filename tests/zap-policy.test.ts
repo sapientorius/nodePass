@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 // @ts-expect-error Node-only audit policy is deliberately shared with the CI runner.
 import { evaluateAlerts } from "../scripts/zap-policy.mjs";
+import exceptions from "../security/zap-exceptions.json";
 describe("blocking security report policy", () => {
   const alert = {
       alertRef: "10055-6",
@@ -53,5 +54,35 @@ describe("blocking security report policy", () => {
     expect(
       evaluateAlerts([alert], [exception], new Date("2027-02-01")),
     ).toHaveLength(1);
+  });
+  it("preserves every reviewed target and refuses broader or executable exception patterns", () => {
+    const now = new Date("2026-10-25");
+    for (const url of [
+      "http://host.docker.internal:3101/",
+      "http://host.docker.internal:3101/robots.txt",
+      "http://host.docker.internal:3101/sitemap.xml",
+    ])
+      expect(evaluateAlerts([{ ...alert, url }], exceptions, now)).toEqual([]);
+    const httpOnly = { ...alert, alertRef: "10106", name: "HTTP Only Site" };
+    for (const url of [
+      "http://host.docker.internal:3101/api/v1",
+      "http://host.docker.internal:3101/api/v1/",
+    ])
+      expect(evaluateAlerts([{ ...httpOnly, url }], exceptions, now)).toEqual(
+        [],
+      );
+    for (const url of [
+      "http://host.docker.internal:3101/api/v1/accounts",
+      "https://host.docker.internal:3101/",
+      "http://host.docker.internal:3101.evil.test/",
+      "http://host.docker.internal:3101/robots.txt?secret=1",
+    ])
+      expect(evaluateAlerts([{ ...alert, url }], exceptions, now)).toHaveLength(
+        1,
+      );
+    for (const url of [".*", "^http://.*$", "^(a+)+$", "["])
+      expect(() =>
+        evaluateAlerts([alert], [{ ...exception, url }], now),
+      ).toThrow();
   });
 });
