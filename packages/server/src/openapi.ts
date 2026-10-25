@@ -1,4 +1,4 @@
-import { accountInput } from "@nodepass/contracts";
+import { accountInput, version } from "@nodepass/contracts";
 type Route = { path: string; methods: string[] };
 /** The same route registry that handles requests supplies the public route inventory. */
 export function openApi(
@@ -89,7 +89,7 @@ export function openApi(
     openapi: "3.1.0",
     info: {
       title: "nodePass API",
-      version: "0.1.0",
+      version,
       description:
         "Same-origin REST API. Secrets are available only through explicit audited operations. Use the session CSRF value and exact Origin header for mutations. JSON-RPC compatibility remains at /api.php.",
     },

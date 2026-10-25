@@ -349,7 +349,7 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
             .db("Account")
             .where({ id: row.id })
             .update({
-              dateEdit: 1000 + index,
+              dateEdit: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
               passDateChange: 3000 - index,
             });
         }

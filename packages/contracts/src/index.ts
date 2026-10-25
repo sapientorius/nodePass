@@ -1,4 +1,5 @@
 import { Type, type Static } from "@feathersjs/typebox";
+export { version } from "./version.js";
 
 export const languages = [
   "de_DE",

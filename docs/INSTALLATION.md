@@ -45,6 +45,22 @@ npm run preview
 
 ## Fresh installation with Docker Compose
 
+For published versions, prefer the verified deployment archive described in [Releases](RELEASES.md#install-a-published-deployment-bundle). Its Compose files already use the exact release image digest. After verifying and extracting it, initialize secrets with that same image:
+
+```sh
+cp .env.example .env
+export NODEPASS_IMAGE='ghcr.io/sapientorius/nodepass@sha256:REPLACE_WITH_VERIFIED_DIGEST'
+docker pull "$NODEPASS_IMAGE"
+mkdir -p secrets
+docker run --rm --user 0 --mount type=bind,src="$PWD/secrets",dst=/secrets \
+  "$NODEPASS_IMAGE" packages/server/dist/server/src/cli.js init-secrets \
+  --directory /secrets --container-owners
+```
+
+Set the HTTPS origin and trusted ingress values described below, then start the bundle with `docker compose up --detach --no-build`. From a source checkout, append the `docker-compose.release.yml` override as documented in Releases. Coolify and Dokploy can use the bundle's corresponding Compose file directly; retain their platform-managed secrets.
+
+### Build from source
+
 The following commands use a POSIX shell, from the repository root. Protect the working directory and secret files. On Windows use equivalent PowerShell file commands and Docker Desktop host ACLs.
 
 ```sh

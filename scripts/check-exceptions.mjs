@@ -43,3 +43,18 @@ for (const root of ["packages/server/src", "packages/web/src", "scripts"])
 if (seen.size !== exceptions.length)
   throw new Error("Stale static exception entry");
 console.log(`Verified ${seen.size} exact, time-limited static exception.`);
+const zap = JSON.parse(await readFile("security/zap-exceptions.json", "utf8"));
+for (const exception of [...exceptions, ...zap]) {
+  const remaining = Date.parse(exception.expiresAt) - Date.now();
+  if (
+    !exception.owner ||
+    !exception.reason ||
+    !Number.isFinite(remaining) ||
+    remaining <= 0
+  )
+    throw new Error("Unreviewed or expired scanner exception");
+  if (remaining <= 30 * 86400000)
+    console.warn(
+      `Scanner exception ${exception.rule ?? exception.alertRef} expires on ${exception.expiresAt}; reassess its exact scope before expiry.`,
+    );
+}

@@ -1,0 +1,7 @@
+# Apply after the standard, Coolify or Dokploy Compose file.
+# NODEPASS_IMAGE must be the complete ghcr.io/...@sha256:... release reference.
+services:
+  app:
+    image: ${NODEPASS_IMAGE:?Set the verified release image digest}
+    build: !reset null
+    platform: linux/amd64

@@ -1,6 +1,6 @@
 {
   "name": "@nodepass/web",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "rtk:build": "rtk npm run build"
   },
   "dependencies": {
-    "@nodepass/contracts": "0.1.0",
+    "@nodepass/contracts": "0.1.0-rc.1",
     "@simplewebauthn/browser": "^13.2.0",
     "@vitejs/plugin-vue": "^6.0.0",
     "@zxcvbn-ts/core": "^3.0.4",

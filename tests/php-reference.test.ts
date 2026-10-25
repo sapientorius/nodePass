@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 const stored = JSON.parse(
   readFileSync(new URL("fixtures/reference.json", import.meta.url), "utf8"),
 );
-const generated = ".cache/php-reference.json";
+const generated =
+  process.env.NODEPASS_PHP_REFERENCE ?? ".cache/php-reference.json";
 if (
   process.env.NODEPASS_REQUIRE_PHP_REFERENCE === "1" &&
   !existsSync(generated)

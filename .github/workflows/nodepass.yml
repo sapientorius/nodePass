@@ -1,9 +1,10 @@
 name: nodePass verification
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
     tags: ["nodepass-v*"]
-  pull_request: {}
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
   schedule:
     - cron: "23 4 * * 1"
@@ -11,7 +12,7 @@ permissions:
   contents: read
 concurrency:
   group: nodepass-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 defaults:
   run:
     working-directory: .
@@ -34,6 +35,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
@@ -52,6 +54,7 @@ jobs:
       - run: npm run format:check
       - run: npm run check:assets
       - run: npm run check:publication
+      - run: npm run check:release
       - run: npm run audit
       - run: node scripts/ci-env.mjs
       - run: node --env-file=.cache/integration.env scripts/wait-db.mjs
@@ -73,10 +76,15 @@ jobs:
     name: Security scans
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    outputs:
+      digest: ${{ steps.prepare.outputs.digest }}
+      version: ${{ steps.prepare.outputs.version }}
+      prerelease: ${{ steps.prepare.outputs.prerelease }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: semgrep/semgrep-rules
@@ -88,22 +96,58 @@ jobs:
           node-version: "24"
           package-manager-cache: false
       - run: npm ci --ignore-scripts
+      - name: Verify release identity
+        id: version
+        run: npm run check:release
       - run: npm run check:exceptions
       - run: node scripts/audit-rules.mjs .cache/semgrep-rules
+      - run: node scripts/stage-source.mjs
       - run: mkdir -p output/security
-      - run: docker run --rm --network none -v "$PWD:/src:ro" -v "$PWD/output/security:/reports" -w /src semgrep/semgrep@sha256:3db5c7af55eb1f512eac0abf0ab69a97b52c74b5e9a27314c221aee1a78d7ab2 semgrep scan --config security/semgrep.yml --config .cache/semgrep-security.json --metrics=off --disable-version-check --strict --json --output /reports/semgrep.json --error packages/server/src packages/web/src
-      - run: docker run --rm --network none -v "$PWD:/src:ro" -w /src zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f dir --config .gitleaks.toml --redact --no-banner .
-      - run: docker build --tag nodepass:ci .
+      - run: docker run --rm --network none -v "$PWD/.cache/security-source:/src:ro" -v "$PWD/.cache/semgrep-security.json:/rules.json:ro" -v "$PWD/output/security:/reports" -w /src semgrep/semgrep@sha256:3db5c7af55eb1f512eac0abf0ab69a97b52c74b5e9a27314c221aee1a78d7ab2 semgrep scan --config security/semgrep.yml --config /rules.json --metrics=off --disable-version-check --strict --json --output /reports/semgrep.json --error packages/server/src packages/web/src scripts
+      - run: docker run --rm --network none -v "$PWD/.cache/security-source:/src:ro" -w /src zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f dir --config .gitleaks.toml --redact --no-banner .
+      - name: Build the image that will be tested and published
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: >-
+          docker build --platform linux/amd64 --provenance=false --sbom=false
+          --label "org.opencontainers.image.revision=$GITHUB_SHA"
+          --label "org.opencontainers.image.version=$RELEASE_VERSION"
+          --label "org.opencontainers.image.source=https://github.com/sapientorius/nodePass"
+          --tag nodepass:ci .
       - run: npm run check:compose
       - run: npm run test:container
         env:
           NODEPASS_TEST_IMAGE: nodepass:ci
       - run: docker save --output /tmp/nodepass.tar nodepass:ci
       - run: docker run --rm -v /tmp/nodepass.tar:/image.tar:ro -v "$PWD/output/security:/reports" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /image.tar --exit-code 1 --severity HIGH,CRITICAL --format json --output /reports/trivy-image.json
-      - run: docker run --rm -v "$PWD:/src:ro" -v "$PWD/output/security:/reports" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c config --exit-code 1 --severity HIGH,CRITICAL --skip-dirs /src/.cache --skip-dirs /src/node_modules --format json --output /reports/trivy-config.json /src
+      - run: docker run --rm -v "$PWD/.cache/security-source:/src:ro" -v "$PWD/output/security:/reports" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c config --exit-code 1 --severity HIGH,CRITICAL --format json --output /reports/trivy-config.json /src
       - run: docker run --rm -v /tmp/nodepass.tar:/image.tar:ro -v "$PWD:/reports" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /image.tar --format cyclonedx --output /reports/sbom.cdx.json
       - run: sha256sum /tmp/nodepass.tar sbom.cdx.json > output/security/SHA256SUMS
       - run: docker image inspect nodepass:ci --format '{{json .}}' > output/security/image-manifest.json
+      - name: Preserve the tested image as an OCI layout
+        run: |
+          mkdir -p .cache/release
+          docker run --rm --user "$(id -u):$(id -g)" -v /tmp/nodepass.tar:/image.tar:ro -v "$PWD/.cache/release:/release" ghcr.io/regclient/regctl@sha256:45b57933c2b67bb1e280b4baaa220ef1ab212c81268ab19589fa1e83719c7c82 image import ocidir:///release/imported:release /image.tar
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/.cache/release:/release" ghcr.io/regclient/regctl@sha256:45b57933c2b67bb1e280b4baaa220ef1ab212c81268ab19589fa1e83719c7c82 image copy --platform linux/amd64 ocidir:///release/imported:release ocidir:///release/oci:release
+      - name: Prepare and validate deployment artifacts
+        id: prepare
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            npm run release:prepare
+          else
+            npm run release:prepare -- --dry-run
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: startsWith(github.ref, 'refs/tags/') && github.repository == 'sapientorius/nodePass'
+        with:
+          name: nodepass-release-${{ github.sha }}
+          path: |
+            .cache/release/oci
+            .cache/release/assets
+            .cache/release/release-notes.md
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -165,7 +209,7 @@ jobs:
         with:
           persist-credentials: false
       - run: docker run --rm --network none -v "$PWD:/src:ro" -w /src rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 .github/workflows/nodepass.yml
-      - run: docker run --rm --network none -v "$PWD:/src:ro" ghcr.io/zizmorcore/zizmor@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9 --offline --min-severity low /src/.github/workflows/nodepass.yml
+      - run: docker run --rm --network none -v "$PWD:/src:ro" ghcr.io/zizmorcore/zizmor@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9 --offline --min-severity low /src/.github/workflows
       - run: docker run --rm --network none -v "$PWD:/src:ro" -w /src hadolint/hadolint@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d hadolint Dockerfile
   application-scan:
     name: Authenticated application scan
@@ -210,3 +254,92 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         working-directory: .
         run: node -e "if(Object.values(JSON.parse(process.env.RESULTS)).some(job => job.result !== 'success')) process.exit(1)"
+  release-hosting:
+    name: Release hosting checks
+    needs: [release-gate, security]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/nodepass-v') && github.repository == 'sapientorius/nodePass'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: node scripts/check-release-hosting.mjs
+  publish:
+    name: Approve and publish verified artifacts
+    needs: [release-hosting, release-gate, security]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/nodepass-v') && github.repository == 'sapientorius/nodePass'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: release
+      url: https://github.com/sapientorius/nodePass/releases
+    concurrency:
+      group: nodepass-release-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      EXPECTED_DIGEST: ${{ needs.security.outputs.digest }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: nodepass-release-${{ github.sha }}
+          path: .cache/release
+      - run: node scripts/verify-release.mjs
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the verified image without rebuilding
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-image.mjs
+      - name: Attest image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ghcr.io/sapientorius/nodepass
+          subject-digest: ${{ needs.security.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Attest image SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ghcr.io/sapientorius/nodepass
+          subject-digest: ${{ needs.security.outputs.digest }}
+          sbom-path: .cache/release/assets/sbom.cdx.json
+          push-to-registry: true
+          create-storage-record: false
+      - name: Attest downloadable release assets
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: .cache/release/assets/*
+          create-storage-record: false
+      - name: Upload assets to a draft, then publish the immutable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-release.mjs
+      - name: Advance latest for the new stable release
+        if: ${{ !contains(needs.security.outputs.version, '-rc.') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-image.mjs --latest

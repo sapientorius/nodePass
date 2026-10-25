@@ -14,6 +14,7 @@ const env = {
   NODEPASS_PREVIEW_DEPLOYMENT_KEY:
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   NODEPASS_PREVIEW_SETUP_TOKEN: "synthetic-preview-setup-token-only",
+  NODEPASS_IMAGE: "ghcr.io/sapientorius/nodepass@sha256:" + "a".repeat(64),
 };
 for (const files of [
   ["docker-compose.yml"],
@@ -21,6 +22,14 @@ for (const files of [
   ["docker-compose.dokploy.yml"],
   ["docker-compose.yml", "docker-compose.existing.yml"],
   ["docker-compose.preview.yml"],
+  ["docker-compose.yml", "docker-compose.release.yml"],
+  ["docker-compose.coolify.yml", "docker-compose.release.yml"],
+  ["docker-compose.dokploy.yml", "docker-compose.release.yml"],
+  [
+    "docker-compose.yml",
+    "docker-compose.release.yml",
+    "docker-compose.existing.yml",
+  ],
 ]) {
   const output = await new Promise((resolve, reject) => {
     const child = spawn(
@@ -54,6 +63,15 @@ for (const files of [
   });
   const config = JSON.parse(output),
     app = config.services.app;
+  if (
+    files.includes("docker-compose.release.yml") &&
+    (app.build ||
+      app.image !== env.NODEPASS_IMAGE ||
+      app.platform !== "linux/amd64")
+  )
+    throw new Error(
+      "Release deployments must use the pinned image without a build",
+    );
   if (
     !app.read_only ||
     !app.cap_drop.includes("ALL") ||

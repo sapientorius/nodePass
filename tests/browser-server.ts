@@ -17,7 +17,8 @@ const isolated = await isolatedDatabase(loadConfig()),
     publicUrl: `http://localhost:${port}`,
     rpId: "localhost",
     port,
-    dataDir: `.cache/browser-data-${port}`,
+    dataDir:
+      process.env.NODEPASS_BROWSER_DATA_DIR ?? `.cache/browser-data-${port}`,
   };
 await mkdir(".cache", { recursive: true });
 await writeFile(

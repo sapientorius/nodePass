@@ -73,6 +73,8 @@ Mount inputs read-only and make them readable only by app UID 65532. Keep sensit
 
 ## Release and hosting checks
 
+Follow the [release procedure](RELEASES.md) for version preparation, repository rules, approval, immutable assets and digest-pinned deployment. Release candidates never advance the stable `latest` image tag.
+
 Configure actual repository rules: reviewed pull requests, **Required release checks** (`release-gate`) required, no direct release-branch pushes or ordinary-user bypass, and stale-review dismissal after new commits. Assign real reviewers/CODEOWNERS as appropriate. Workflow files alone cannot enforce these settings.
 
 The gate requires application verification, security scans, all compatibility jobs, workflow/Dockerfile audits and the authenticated application scan. MariaDB 11.8 is the main target; the matrix adds 10.11, 11.4 and MySQL 8.4. Skipped, cancelled or failed prerequisite jobs fail the gate. Verification also runs weekly and for `nodepass-v*` tags. Release only the tested commit and corresponding image digest.

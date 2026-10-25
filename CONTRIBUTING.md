@@ -19,6 +19,7 @@ npm run audit
 npm run check:assets
 npm run check:exceptions
 npm run check:publication
+npm run check:release
 ```
 
 Every npm command also has an optional `rtk:` variant. Normal scripts work without RTK. Keep both variants when adding commands. On PowerShell use `npm.cmd` if script policy blocks `npm.ps1`.
@@ -53,6 +54,8 @@ docker run --rm --network none -v "$PWD:/workspace" \
 
 Set `NODEPASS_REQUIRE_PHP_REFERENCE=1` for the integration run to require the fresh vectors. Fixed reference fixtures must also pass. Their provenance is in [NOTICE.md](NOTICE.md).
 
+For an independent local test run, `NODEPASS_PHP_REFERENCE` can select a separately generated vector file and `NODEPASS_BROWSER_DATA_DIR` can select a new synthetic browser/scan data directory. Keep both separate from existing test state and operator data. The approved listener ports remain 3100/3101.
+
 ## Review expectations
 
 Preserve original sysPass schema definitions and field/record permissions. Never make a scanner/parser error count as success. Do not reduce coverage: overall minimums are 90% lines/statements/functions and 85% branches; server security, compatibility and migration areas require 95% lines/branches. Test meaningful denied paths, replay, malformed input and recovery as appropriate.
@@ -63,4 +66,4 @@ Serve browser assets locally; do not introduce CDNs, remote fonts, telemetry or 
 
 `check:publication` checks Git's tracked and nonignored candidate paths, rejects internal/runtime/secret artifact paths and validates local documentation links. Run it before committing. It complements secret scanning; filename rules cannot detect every secret embedded in source. `.env.example` and the reviewed synthetic fixtures remain public.
 
-The standalone workflow lives in `.github/workflows/nodepass.yml`. It verifies build/types/format/lint, integration coverage, browser behavior, four DB targets, dependencies, secret/static/image/config/workflow/Dockerfile findings and an authenticated ZAP scan. Pinned Actions/images and **Required release checks** must remain intact. Hosted results and repository rules need actual GitHub configuration; see [release requirements](docs/OPERATIONS.md#release-and-hosting-checks).
+The standalone workflow lives in `.github/workflows/nodepass.yml`. It verifies build/types/format/lint, integration coverage, browser behavior, four DB targets, dependencies, secret/static/image/config/workflow/Dockerfile findings and an authenticated ZAP scan. Pinned Actions/images and **Required release checks** must remain intact. Tag runs enter separate publishing jobs only after the complete gate, using artifacts from that same run. Hosted rules and release approval require actual GitHub configuration; see the [release procedure](docs/RELEASES.md) and [operating requirements](docs/OPERATIONS.md#release-and-hosting-checks).

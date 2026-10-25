@@ -1,6 +1,6 @@
 {
   "name": "nodepass",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "private": true,
   "description": "Self-hosted sysPass successor with a Feathers 5 API and Vue 3 UI",
   "license": "GPL-3.0-or-later",
@@ -63,7 +63,13 @@
     "check:publication": "node scripts/check-publication.mjs",
     "rtk:check:publication": "rtk npm run check:publication",
     "check:compose": "node scripts/check-compose.mjs",
-    "rtk:check:compose": "rtk npm run check:compose"
+    "rtk:check:compose": "rtk npm run check:compose",
+    "check:release": "node scripts/check-release.mjs",
+    "rtk:check:release": "rtk npm run check:release",
+    "release:version": "node scripts/release-version.mjs",
+    "rtk:release:version": "rtk npm run release:version",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "rtk:release:prepare": "rtk npm run release:prepare"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
