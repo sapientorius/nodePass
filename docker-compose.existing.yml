@@ -1,0 +1,15 @@
+# docker compose -f docker-compose.yml -f docker-compose.existing.yml up -d app
+# Requires Docker Compose >= 2.24.4 for !reset.
+services:
+  app:
+    depends_on: !reset {}
+    environment:
+      DB_HOST: ""
+      DB_NAME: ""
+      DB_USER: ""
+      DB_PASSWORD_FILE: ""
+      SYSPASS_CONFIG: /run/nodepass/config.xml
+    volumes:
+      - ${SYSPASS_CONFIG_FILE:?Set the absolute path to config.xml}:/run/nodepass/config.xml:ro
+  db:
+    profiles: [fresh-database]

@@ -1,0 +1,47 @@
+# Local preview only. Production deployments use docker-compose.yml and HTTPS.
+name: nodepass-preview
+services:
+  app:
+    image: nodepass:preview
+    build:
+      context: .
+      target: production
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    environment:
+      NODE_ENV: development
+      PUBLIC_URL: http://localhost:3000
+      TRUST_PROXY: "0"
+      TRUSTED_PROXIES: ""
+      DB_HOST: db
+      DB_NAME: nodepass_preview
+      DB_USER: nodepass_preview
+      DB_PASSWORD: ${NODEPASS_PREVIEW_DB_PASSWORD:?Use npm run preview}
+      DEPLOYMENT_KEY: ${NODEPASS_PREVIEW_DEPLOYMENT_KEY:?Use npm run preview}
+      SETUP_TOKEN: ${NODEPASS_PREVIEW_SETUP_TOKEN:?Use npm run preview}
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: [data:/app/data]
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mariadb:11.8@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+    environment:
+      MARIADB_DATABASE: nodepass_preview
+      MARIADB_USER: nodepass_preview
+      MARIADB_PASSWORD: ${NODEPASS_PREVIEW_DB_PASSWORD:?Use npm run preview}
+      MARIADB_ROOT_PASSWORD: ${NODEPASS_PREVIEW_ROOT_PASSWORD:?Use npm run preview}
+    volumes: [database:/var/lib/mysql]
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+volumes:
+  data:
+  database:

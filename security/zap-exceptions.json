@@ -1,0 +1,18 @@
+[
+  {
+    "alertRef": "10055-6",
+    "name": "CSP: style-src unsafe-inline",
+    "url": "^http://host\\.docker\\.internal:3101/(?:|robots\\.txt|sitemap\\.xml)$",
+    "owner": "nodePass maintainers",
+    "expiresAt": "2027-01-15T00:00:00Z",
+    "reason": "The approved NaiveUI design needs dynamic style elements and style attributes. Only styles allow unsafe-inline; scripts remain self-only with no eval. No user HTML is rendered. Reassess nonce-compatible style mounting before expiry. See docs/SECURITY.md."
+  },
+  {
+    "alertRef": "10106",
+    "name": "HTTP Only Site",
+    "url": "^http://host\\.docker\\.internal:3101/api/v1/?$",
+    "owner": "nodePass maintainers",
+    "expiresAt": "2027-01-15T00:00:00Z",
+    "reason": "The isolated synthetic test listener deliberately uses HTTP inside the Docker/host test boundary. Production rejects HTTP public origins and requires a trusted TLS ingress and Secure cookies. This exception does not match any production address."
+  }
+]

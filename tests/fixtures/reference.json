@@ -1,0 +1,50 @@
+{
+    "source": "Defuse PHP v2.3.1 \/ sysPass 3.2.11",
+    "master": "12345678900",
+    "hashes": [
+        {
+            "password": "",
+            "hash": "$2y$12$RHJ86caWUqz\/aMNy3RmAWOYylbiMs6Z811LqyME8SE4x04iN3DhES"
+        },
+        {
+            "password": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "hash": "$2y$12$iQ0Re86HclNSnJHNfvp1.uUwJcSjbMgB9cIUhWWPtjc2dzhqIFMJy"
+        },
+        {
+            "password": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "hash": "$2y$12$sET7zEewCdZeyOoTU9eLOOosTGcX8GAEAzNRxuS78fsO16flQp.bW"
+        },
+        {
+            "password": "日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日",
+            "hash": "$2y$12$XK8PSz2KQzdVIxx..bPpSONYx5\/9Q5xWwGS9tVi0tnJksqzw78vS6"
+        },
+        {
+            "password": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "hash": "$2y$12$UuHNEAp77suRm\/2qqp8e.u2TMY.RLHvqkhyR.aZR1ce0wnz1TKZX6"
+        },
+        {
+            "password": "  synthetic password  ",
+            "hash": "$2y$12$.\/Sj3L48ZRrjYRnXavfhI.eJzx2zgxZuqaLstrpqkq8XqwfiCdfZm"
+        }
+    ],
+    "secret": {
+        "pass": "def50200cfc92ac7f2aadd158dd788d4f3eb45c274a1d836554c9fe44457e0aaad657fc41fbfeda40eaa22d2bba4599c165949a00625822de1d77fbe426ff152d6769a77bcfb8327439b4ed061a6ac07a33e2ce6a39f7cb045620a155b71695558159f85",
+        "key": "def10000def50200d48377625503281c1cac5901e7baf81245f1b2037f7cb616267903c70c1085847b27a516402e554110b2f00ec19b430c2b25fb58e1e99f53f73f5ac11c513e5c81dbc9ebdba020a6afeaa26d04ec9b37f7b1351bf7c853425a181aa2aec8b90aa931068cf17f14f349f36430feb0094e28b6a3ab783ab05b2c5c9922af4a5ccf17c6f19cca3d91b3347c31eba75bf57fb41d801621d8ca3b452ee7c9fec0dd2053f53736128bdd8a77527a0ea60d661f7fc9954acad9b8ae668af45120cfb02e13b101fde6ea78af3677ac143c0ee444755a35bf96cd334ef65785fdfdefd02c339af15449e65a177992ebb518973a5b0fdcce6aef3bd8f4"
+    },
+    "plugin": {
+        "pass": "def50200106417e7473417ea7d998996f0e9522939348835229f9fe3b610ddbc499267b37ee6f89a78a6e6ed5dc9f59643bac9fe27d9f093ebd9701208f828744c125d2b0454809e219477d2c0ee0a7635f320963459459a2ec5db3ea06f0611c7b4cf4b340994eb4dd2f5f82b07241f7cc446f8868a6723148763616a3a259c3d30a1aaff4bcff8204ec6b85eb963cd360ed77426eddd652d77ed82df0f4cb2f051bdd2a48b4296d02fdc006bae0b37b40730262e0cb0a195e7e5e667b7fcc434807b95404373cdf07afbaf99b7ef94f0bf2317334e0f4f71a78aaba489426de7fb1a0dc3745b7fab5a9295db12b2976babf1eb1c77d0e3840358672508c4f11f9c8ea78b050882128de543384d450dc3889315755d4ae9a0d9109fe29312795bdd176856ffc8cf2abfe85a2d9bef0c5d2168c5a73a1e21d87d95b1ce0eb093d70cd8800aab7a6622f91cd348163111e36ba19749168076c76cf42872502efee8ce2fe24a17c1394af4bf5703390285db",
+        "key": "def10000def502007f4cf64b548570121b2aaa9f0515404f368b8d173ec0c09555983de0eda21bb02194943552ac3a28fdb6f75b0854fb485c8bd6c126497d1993912ce611f9bbcc024980c832d0580e4221289d6f2abdcf3aed10d46c6fc4cad4e36384218cbe94c789a1aa4203055bbccb83fa03b57b826e0ab6be4cc489fc678e943958b6087f14350175e216d478ab2ccbf0c2e66243902859fed009347c882474f58f8c944e837d7fed43854cd28e28b6d0f55088d4f79a9a6a1790fe684a5f2a9607b06079a7d690780c151abbaa841efbc32383cc02c2ffe43b7878a20c052a945b1307aa4b806f2abfade0d24ee6f1b6efcb8b3594a9d3c50746144e"
+    },
+    "publicLink": {
+        "salt": "synthetic-public-link-salt",
+        "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "serialized": "TzoxOToiU1BcQ29yZVxDcnlwdFxWYXVsdCI6NDp7czoyNToiAFNQXENvcmVcQ3J5cHRcVmF1bHQAZGF0YSI7czo1MTY6ImRlZjUwMjAwMzBmZjdmNTZiZTU0NTMwOGEyMzIxZDc5NmYyMjIzZmY0NjNkMTUyNGRhNDQ4NWM3MDIwMDlkNGUyZWE4OTNmMjM4YTU0YTM3YTdmMWFlYzEzZmU0MDZkNWVkZDNlOTRkYzg3YjIwYjA4YjllM2M1NzE0OTQwMDYyYjI5NDU3M2U2MmI1YjA4YzU5YTg1YWNkNjc1MTFjNDUwN2ZhYjFjZTljNjg5YWJiNWIxOWY5MmYyZmVkZGVlMTI4ZTM3MThkNmM0MmNjNzhlZDJkNzc2MzU1Y2UxNzhiMTNmYTUwNjI2NzgzZDI5Y2I1OWM2MWFmOTM4OWEzMDY4MTBlMGE4ODk3NTNhMzc1OWMyMTE1MmVhYzMyODc1MzI3Y2UzMTFiNzVlZTU5YTRjNmMxYTEwNGQ1ZmQ5ODRlNDc1MTExNzg1N2FkMmVlNWViZThlNGVmZmU2YTkyYTQ4ZDRkMTdjYzBkMGE0NTBhNmU1YjVjZTM0YzY1ZjJhZDMzNzRiNGQ5ZGY1MWI4ODU0Mjk1MmU5ZTI2NGMwZTUwYzRkMGZiZWQxY2YwNTI1OWZhNjc3ZDEwYzBmMWJjZTczMmM0NmNmNDUyMTg0N2Y0Nzc5MDhhM2I2N2M3MDZhNjY1MGI0NTkzMjNlYmNlOGRkZDRlZWYxZjZkN2MzZGMyOTk3YiI7czoyNDoiAFNQXENvcmVcQ3J5cHRcVmF1bHQAa2V5IjtzOjUxMjoiZGVmMTAwMDBkZWY1MDIwMDM1NjNhYjY5ZmRjNGYwODgzNTI3Y2U2ZjkyMmU5M2Q0ZjJhNTRiMTRjZjIxNDdjMjVkNjZhYjg4YzgwOGIxZjEyYjkxMzJjNzVlYTVlOGRjZDk0ZDYyNGY4NzZlOTRlYzRmYTVhOTFhOTJmZDRkNTNkNTFjYWFmOTYwYWJmOGNkNjg2YzNjZjZmNTBjOGZiNDJlMGQ1NTk2NWRkY2UxYjYxMzkyZDA1NmFmMWY5MGVhZmExNTgwNmJlYmM3MGJhZWYzM2Y5NTIzNWM3OGUwYTA0YmY0YmFkNzFlM2VlYTRmMDY2MmZmNGVlYWViOTdmMjMyZDE0MzU5YTI0YmU1MWZmMDQ4ODQ0OTQ3ZTgyMjk2MDcwYmY0ZDBiZDE0MzI4Nzk0ZTQ1NjlkODBkNGQ5MjI3ZmExYzg0MGE3NDcwM2E3MGQxNDUxNzhjNDY0MDc4YWVkYWE4ZTRmZjI4ODFhNzUzNjNhYmU2YzI2NTk3Y2U1YTMwZmNjYTg4NjY3NTQ1NDhlYjAwOTMwYWQ2YmNlYTMyNmYzMDg5ZGVkYTQ5NTNjZGQwYWU2MTg1ZDg0MmFlODdlMGQwMDNhYTkyNzdkMzc3MjlmMjU0NzIwMjQzMDlhN2I1NWI5MGI4MWUzODZhMjYzM2Q4MDJmZjcyMWY3NGUiO3M6Mjg6IgBTUFxDb3JlXENyeXB0XFZhdWx0AHRpbWVTZXQiO2k6MTcwMDAwMDAwMDtzOjMyOiIAU1BcQ29yZVxDcnlwdFxWYXVsdAB0aW1lVXBkYXRlZCI7aTowO30=",
+        "expected": {
+            "name": "Synthetic account",
+            "login": "reference",
+            "url": "https:\/\/example.invalid",
+            "notes": "Test only",
+            "pass": "synthetic secret"
+        }
+    }
+}

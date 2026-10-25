@@ -1,0 +1,15 @@
+node_modules
+.agents
+AGENTS.md
+AGENTS.MD
+**/.playwright-cli
+.cache
+**/dist
+coverage
+test-results
+playwright-report
+output
+packages/server/resources
+tests/fixtures
+COPYING
+package-lock.json

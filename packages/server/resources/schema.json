@@ -1,0 +1,860 @@
+{
+  "Account": [
+    {
+      "name": "id",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "userGroupId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "userEditId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "clientId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "categoryId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "login",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "url",
+      "type": "varchar(255)"
+    },
+    {
+      "name": "pass",
+      "type": "varbinary(2000)"
+    },
+    {
+      "name": "key",
+      "type": "varbinary(2000)"
+    },
+    {
+      "name": "notes",
+      "type": "text"
+    },
+    {
+      "name": "countView",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "countDecrypt",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "dateAdd",
+      "type": "datetime"
+    },
+    {
+      "name": "dateEdit",
+      "type": "datetime"
+    },
+    {
+      "name": "otherUserGroupEdit",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "otherUserEdit",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isPrivate",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isPrivateGroup",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "passDate",
+      "type": "int(11) unsigned"
+    },
+    {
+      "name": "passDateChange",
+      "type": "int(11) unsigned"
+    },
+    {
+      "name": "parentId",
+      "type": "mediumint(8) unsigned"
+    }
+  ],
+  "ItemPreset": [
+    {
+      "name": "id",
+      "type": "int"
+    },
+    {
+      "name": "type",
+      "type": "varchar(25)"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "userGroupId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "userProfileId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "fixed",
+      "type": "tinyint(1) unsigned"
+    },
+    {
+      "name": "priority",
+      "type": "tinyint(3) unsigned"
+    },
+    {
+      "name": "data",
+      "type": "blob"
+    },
+    {
+      "name": "hash",
+      "type": "varbinary(40)"
+    }
+  ],
+  "AccountFile": [
+    {
+      "name": "id",
+      "type": "int(11)"
+    },
+    {
+      "name": "accountId",
+      "type": "mediumint(5) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "type",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "size",
+      "type": "int(11)"
+    },
+    {
+      "name": "content",
+      "type": "mediumblob"
+    },
+    {
+      "name": "extension",
+      "type": "varchar(10)"
+    },
+    {
+      "name": "thumb",
+      "type": "mediumblob"
+    }
+  ],
+  "AccountHistory": [
+    {
+      "name": "id",
+      "type": "int(11)"
+    },
+    {
+      "name": "accountId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "userGroupId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "userEditId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "clientId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(255)"
+    },
+    {
+      "name": "categoryId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "login",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "url",
+      "type": "varchar(255)"
+    },
+    {
+      "name": "pass",
+      "type": "varbinary(2000)"
+    },
+    {
+      "name": "key",
+      "type": "varbinary(2000)"
+    },
+    {
+      "name": "notes",
+      "type": "text"
+    },
+    {
+      "name": "countView",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "countDecrypt",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "dateAdd",
+      "type": "datetime"
+    },
+    {
+      "name": "dateEdit",
+      "type": "datetime"
+    },
+    {
+      "name": "isModify",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isDeleted",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "mPassHash",
+      "type": "varbinary(255)"
+    },
+    {
+      "name": "otherUserEdit",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "otherUserGroupEdit",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "passDate",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "passDateChange",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "parentId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "isPrivate",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isPrivateGroup",
+      "type": "tinyint(1)"
+    }
+  ],
+  "AccountToFavorite": [
+    {
+      "name": "accountId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    }
+  ],
+  "AccountToTag": [
+    {
+      "name": "accountId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "tagId",
+      "type": "int(10) unsigned"
+    }
+  ],
+  "AccountToUser": [
+    {
+      "name": "accountId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "isEdit",
+      "type": "tinyint(1) unsigned"
+    }
+  ],
+  "AccountToUserGroup": [
+    {
+      "name": "accountId",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "userGroupId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "isEdit",
+      "type": "tinyint(1) unsigned"
+    }
+  ],
+  "AuthToken": [
+    {
+      "name": "id",
+      "type": "int(11)"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "token",
+      "type": "varbinary(255)"
+    },
+    {
+      "name": "actionId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "createdBy",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "startDate",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "vault",
+      "type": "varbinary(2000)"
+    },
+    {
+      "name": "hash",
+      "type": "varbinary(500)"
+    }
+  ],
+  "Category": [
+    {
+      "name": "id",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "description",
+      "type": "varchar(255)"
+    },
+    {
+      "name": "hash",
+      "type": "varbinary(40)"
+    }
+  ],
+  "Client": [
+    {
+      "name": "id",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "hash",
+      "type": "varbinary(40)"
+    },
+    {
+      "name": "description",
+      "type": "varchar(255)"
+    },
+    {
+      "name": "isGlobal",
+      "type": "tinyint(1)"
+    }
+  ],
+  "Config": [
+    {
+      "name": "parameter",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "value",
+      "type": "varchar(4000)"
+    }
+  ],
+  "CustomFieldData": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "moduleId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "itemId",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "definitionId",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "data",
+      "type": "longblob"
+    },
+    {
+      "name": "key",
+      "type": "varbinary(2000)"
+    }
+  ],
+  "CustomFieldDefinition": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "moduleId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "required",
+      "type": "tinyint(1) unsigned"
+    },
+    {
+      "name": "help",
+      "type": "varchar(255)"
+    },
+    {
+      "name": "showInList",
+      "type": "tinyint(1) unsigned"
+    },
+    {
+      "name": "typeId",
+      "type": "tinyint(3) unsigned"
+    },
+    {
+      "name": "isEncrypted",
+      "type": "tinyint(1) unsigned"
+    }
+  ],
+  "CustomFieldType": [
+    {
+      "name": "id",
+      "type": "tinyint(3) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "text",
+      "type": "varchar(50)"
+    }
+  ],
+  "EventLog": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "date",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "login",
+      "type": "varchar(25)"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "ipAddress",
+      "type": "varchar(45)"
+    },
+    {
+      "name": "action",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "description",
+      "type": "text"
+    },
+    {
+      "name": "level",
+      "type": "varchar(20)"
+    }
+  ],
+  "Notification": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "type",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "component",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "description",
+      "type": "text"
+    },
+    {
+      "name": "date",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "checked",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "sticky",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "onlyAdmin",
+      "type": "tinyint(1)"
+    }
+  ],
+  "Plugin": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "data",
+      "type": "mediumblob"
+    },
+    {
+      "name": "enabled",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "available",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "versionLevel",
+      "type": "varchar(15)"
+    }
+  ],
+  "PublicLink": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "itemId",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "hash",
+      "type": "varbinary(100)"
+    },
+    {
+      "name": "data",
+      "type": "mediumblob"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "typeId",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "notify",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "dateAdd",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "dateExpire",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "dateUpdate",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "countViews",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "totalCountViews",
+      "type": "mediumint(8) unsigned"
+    },
+    {
+      "name": "maxCountViews",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "useinfo",
+      "type": "blob"
+    }
+  ],
+  "Tag": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(45)"
+    },
+    {
+      "name": "hash",
+      "type": "varbinary(40)"
+    }
+  ],
+  "Track": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "source",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "time",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "timeUnlock",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "ipv4",
+      "type": "binary(4)"
+    },
+    {
+      "name": "ipv6",
+      "type": "binary(16)"
+    }
+  ],
+  "User": [
+    {
+      "name": "id",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(80)"
+    },
+    {
+      "name": "userGroupId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "login",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "ssoLogin",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "pass",
+      "type": "varbinary(500)"
+    },
+    {
+      "name": "mPass",
+      "type": "varbinary(2000)"
+    },
+    {
+      "name": "mKey",
+      "type": "varbinary(2000)"
+    },
+    {
+      "name": "email",
+      "type": "varchar(80)"
+    },
+    {
+      "name": "notes",
+      "type": "text"
+    },
+    {
+      "name": "loginCount",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "userProfileId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "lastLogin",
+      "type": "datetime"
+    },
+    {
+      "name": "lastUpdate",
+      "type": "datetime"
+    },
+    {
+      "name": "lastUpdateMPass",
+      "type": "int(11) unsigned"
+    },
+    {
+      "name": "isAdminApp",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isAdminAcc",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isLdap",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isDisabled",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "hashSalt",
+      "type": "varbinary(255)"
+    },
+    {
+      "name": "isMigrate",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isChangePass",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "isChangedPass",
+      "type": "tinyint(1)"
+    },
+    {
+      "name": "preferences",
+      "type": "blob"
+    }
+  ],
+  "UserGroup": [
+    {
+      "name": "id",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(50)"
+    },
+    {
+      "name": "description",
+      "type": "varchar(255)"
+    }
+  ],
+  "UserPassRecover": [
+    {
+      "name": "id",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "hash",
+      "type": "varbinary(255)"
+    },
+    {
+      "name": "date",
+      "type": "int(10) unsigned"
+    },
+    {
+      "name": "used",
+      "type": "tinyint(1)"
+    }
+  ],
+  "UserProfile": [
+    {
+      "name": "id",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "name",
+      "type": "varchar(45)"
+    },
+    {
+      "name": "profile",
+      "type": "blob"
+    }
+  ],
+  "UserToUserGroup": [
+    {
+      "name": "userId",
+      "type": "smallint(5) unsigned"
+    },
+    {
+      "name": "userGroupId",
+      "type": "smallint(5) unsigned"
+    }
+  ],
+  "PluginData": [
+    {
+      "name": "name",
+      "type": "varchar(100)"
+    },
+    {
+      "name": "itemId",
+      "type": "int"
+    },
+    {
+      "name": "data",
+      "type": "blob"
+    },
+    {
+      "name": "key",
+      "type": "varbinary(2000)"
+    }
+  ]
+}

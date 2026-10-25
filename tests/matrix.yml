@@ -1,0 +1,36 @@
+name: nodepass-matrix
+x-environment: &database-environment
+  MARIADB_DATABASE: ${DB_NAME:?}
+  MARIADB_USER: ${DB_USER:?}
+  MARIADB_PASSWORD: ${DB_PASSWORD:?}
+  MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+  MYSQL_DATABASE: ${DB_NAME:?}
+  MYSQL_USER: ${DB_USER:?}
+  MYSQL_PASSWORD: ${DB_PASSWORD:?}
+  MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+  MYSQL_ROOT_HOST: "%"
+x-health: &database-health
+  test: [CMD, mysqladmin, ping, -h, "127.0.0.1", --silent]
+  interval: 3s
+  timeout: 5s
+  retries: 40
+services:
+  mariadb1011:
+    image: mariadb:10.11@sha256:0d0945c57f75b3a3b9ebe71aedaaad005fa5305054e8fca3d2e42a8c92b43b5e
+    environment: *database-environment
+    ports: ["127.0.0.1:13388:3306"]
+    healthcheck:
+      <<: *database-health
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+  mariadb114:
+    image: mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873
+    environment: *database-environment
+    ports: ["127.0.0.1:13389:3306"]
+    healthcheck:
+      <<: *database-health
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+  mysql84:
+    image: mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69
+    environment: *database-environment
+    ports: ["127.0.0.1:13390:3306"]
+    healthcheck: *database-health

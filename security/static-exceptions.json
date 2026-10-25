@@ -1,0 +1,10 @@
+[
+  {
+    "file": "packages/server/src/security/regex-worker.ts",
+    "rule": "detect-non-literal-regexp",
+    "code": "const expression=new RegExp(workerData.pattern);",
+    "owner": "nodePass maintainers",
+    "expiresAt": "2027-01-15T00:00:00Z",
+    "reason": "Bounded legacy regex evaluation runs outside the API event loop in at most two workers. regex.ts enforces a 1-second deadline, 16-MiB heap, 512-character pattern and 1900-byte input. Tests include catastrophic backtracking, capacity limits, malformed patterns and worker protocol. No unbounded RegExp evaluation is authorized."
+  }
+]

@@ -1,0 +1,59 @@
+name: nodepass
+services:
+  app:
+    build:
+      context: .
+      target: production
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?Set the public HTTPS origin}
+      DB_HOST: db
+      DB_NAME: nodepass
+      DB_USER: nodepass
+      DB_PASSWORD_FILE: /run/secrets/db-password-app
+      DEPLOYMENT_KEY_FILE: /run/secrets/deployment-key
+      SETUP_TOKEN_FILE: /run/secrets/setup-token
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the immediate reverse proxy IP or CIDR}
+    secrets: [deployment-key, setup-token, db-password-app]
+    volumes: [nodepass-data:/app/data]
+    ports: ["${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-3000}:3000"]
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mariadb:11.8@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: nodepass
+      MARIADB_USER: nodepass
+      MARIADB_PASSWORD_FILE: /run/secrets/db-password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db-root-password
+    secrets: [db-password, db-root-password]
+    volumes: [database:/var/lib/mysql]
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+secrets:
+  deployment-key:
+    file: ${DEPLOYMENT_KEY_FILE:-./secrets/deployment-key}
+  setup-token:
+    file: ${SETUP_TOKEN_FILE:-./secrets/setup-token}
+  db-password:
+    file: ${DB_PASSWORD_FILE:-./secrets/db-password}
+  db-password-app:
+    file: ${DB_APP_PASSWORD_FILE:-./secrets/db-password-app}
+  db-root-password:
+    file: ${DB_ROOT_PASSWORD_FILE:-./secrets/db-root-password}
+volumes:
+  nodepass-data:
+  database:

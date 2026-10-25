@@ -1,0 +1,212 @@
+name: nodePass verification
+on:
+  push:
+    branches: ["**"]
+    tags: ["nodepass-v*"]
+  pull_request: {}
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+permissions:
+  contents: read
+concurrency:
+  group: nodepass-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    working-directory: .
+jobs:
+  verify:
+    name: Application checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      db:
+        image: mariadb:11.8@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+        env:
+          MARIADB_DATABASE: nodepass_test
+          MARIADB_USER: nodepass
+          MARIADB_PASSWORD: nodepass_ci_only
+          MARIADB_ROOT_PASSWORD: nodepass_ci_root_only
+        ports: ["3306:3306"]
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: defuse/php-encryption
+          ref: 77880488b9954b7884c25555c2a0ea9e7053f9d2
+          path: .cache/defuse
+          persist-credentials: false
+      - run: docker run --rm --network none -v "$PWD:/workspace" -e NODEPASS_REFERENCE_OUTPUT=/workspace/.cache/php-reference.json php:8.4-cli@sha256:40638d9d5ec50bbf20205a06c733fff5839fc13b0a7c8e10e455b49da2a13068 php /workspace/tests/reference.php
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run check:assets
+      - run: npm run check:publication
+      - run: npm run audit
+      - run: node scripts/ci-env.mjs
+      - run: node --env-file=.cache/integration.env scripts/wait-db.mjs
+      - run: node scripts/run-integration.mjs --coverage
+        env:
+          NODEPASS_REQUIRE_PHP_REFERENCE: "1"
+      - run: npm exec playwright -- install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: nodepass-verification
+          path: |
+            coverage
+            playwright-report
+            output/playwright
+          retention-days: 7
+  security:
+    name: Security scans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: semgrep/semgrep-rules
+          ref: 16b9e6d45f10649f6a531ec4838ed9924372c3bc
+          path: .cache/semgrep-rules
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run check:exceptions
+      - run: node scripts/audit-rules.mjs .cache/semgrep-rules
+      - run: mkdir -p output/security
+      - run: docker run --rm --network none -v "$PWD:/src:ro" -v "$PWD/output/security:/reports" -w /src semgrep/semgrep@sha256:3db5c7af55eb1f512eac0abf0ab69a97b52c74b5e9a27314c221aee1a78d7ab2 semgrep scan --config security/semgrep.yml --config .cache/semgrep-security.json --metrics=off --disable-version-check --strict --json --output /reports/semgrep.json --error packages/server/src packages/web/src
+      - run: docker run --rm --network none -v "$PWD:/src:ro" -w /src zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f dir --config .gitleaks.toml --redact --no-banner .
+      - run: docker build --tag nodepass:ci .
+      - run: npm run check:compose
+      - run: npm run test:container
+        env:
+          NODEPASS_TEST_IMAGE: nodepass:ci
+      - run: docker save --output /tmp/nodepass.tar nodepass:ci
+      - run: docker run --rm -v /tmp/nodepass.tar:/image.tar:ro -v "$PWD/output/security:/reports" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /image.tar --exit-code 1 --severity HIGH,CRITICAL --format json --output /reports/trivy-image.json
+      - run: docker run --rm -v "$PWD:/src:ro" -v "$PWD/output/security:/reports" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c config --exit-code 1 --severity HIGH,CRITICAL --skip-dirs /src/.cache --skip-dirs /src/node_modules --format json --output /reports/trivy-config.json /src
+      - run: docker run --rm -v /tmp/nodepass.tar:/image.tar:ro -v "$PWD:/reports" aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /image.tar --format cyclonedx --output /reports/sbom.cdx.json
+      - run: sha256sum /tmp/nodepass.tar sbom.cdx.json > output/security/SHA256SUMS
+      - run: docker image inspect nodepass:ci --format '{{json .}}' > output/security/image-manifest.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: nodepass-sbom
+          path: |
+            sbom.cdx.json
+            output/security
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: MariaDB 10.11
+            image: mariadb:10.11@sha256:0d0945c57f75b3a3b9ebe71aedaaad005fa5305054e8fca3d2e42a8c92b43b5e
+            health: healthcheck.sh --connect --innodb_initialized
+          - name: MariaDB 11.4
+            image: mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873
+            health: healthcheck.sh --connect --innodb_initialized
+          - name: MySQL 8.4
+            image: mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69
+            health: mysqladmin ping -h 127.0.0.1 --silent
+    name: Compatibility (${{ matrix.name }})
+    services:
+      db:
+        image: ${{ matrix.image }}
+        env:
+          MARIADB_DATABASE: nodepass_test
+          MARIADB_USER: nodepass
+          MARIADB_PASSWORD: nodepass_ci_only
+          MARIADB_ROOT_PASSWORD: nodepass_ci_root_only
+          MYSQL_DATABASE: nodepass_test
+          MYSQL_USER: nodepass
+          MYSQL_PASSWORD: nodepass_ci_only
+          MYSQL_ROOT_PASSWORD: nodepass_ci_root_only
+          MYSQL_ROOT_HOST: "%"
+        ports: ["3306:3306"]
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node scripts/ci-env.mjs
+      - run: node --env-file=.cache/integration.env scripts/wait-db.mjs
+      - run: node scripts/run-integration.mjs
+  workflow-audit:
+    name: Workflow and Dockerfile audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: docker run --rm --network none -v "$PWD:/src:ro" -w /src rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 .github/workflows/nodepass.yml
+      - run: docker run --rm --network none -v "$PWD:/src:ro" ghcr.io/zizmorcore/zizmor@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9 --offline --min-severity low /src/.github/workflows/nodepass.yml
+      - run: docker run --rm --network none -v "$PWD:/src:ro" -w /src hadolint/hadolint@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d hadolint Dockerfile
+  application-scan:
+    name: Authenticated application scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      db:
+        image: mariadb:11.8@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+        env:
+          MARIADB_DATABASE: nodepass_test
+          MARIADB_USER: nodepass
+          MARIADB_PASSWORD: nodepass_ci_only
+          MARIADB_ROOT_PASSWORD: nodepass_ci_root_only
+        ports: ["3306:3306"]
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node scripts/ci-env.mjs
+      - run: node --env-file=.cache/integration.env scripts/wait-db.mjs
+      - run: node scripts/zap.mjs
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: nodepass-application-scan
+          path: output/security
+  release-gate:
+    name: Required release checks
+    runs-on: ubuntu-24.04
+    if: always()
+    needs: [verify, security, compatibility, workflow-audit, application-scan]
+    steps:
+      - name: Require every verification job to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        working-directory: .
+        run: node -e "if(Object.values(JSON.parse(process.env.RESULTS)).some(job => job.result !== 'success')) process.exit(1)"

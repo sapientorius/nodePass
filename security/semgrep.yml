@@ -1,0 +1,35 @@
+rules:
+  - id: nodepass-no-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Executable strings are forbidden in the password manager.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: vm.runInNewContext(...)
+      - pattern: vm.runInThisContext(...)
+  - id: nodepass-no-shell-exec
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Use argument arrays with shell disabled; never execute assembled shell commands.
+    pattern-either:
+      - pattern: child_process.exec(...)
+      - pattern: execSync(...)
+      - pattern: "spawn(..., { ..., shell: true, ... })"
+  - id: nodepass-tls-verification
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: TLS certificate validation must remain enabled.
+    pattern: "{ ..., rejectUnauthorized: false, ... }"
+  - id: nodepass-no-plaintext-logging
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Never log passwords or request bodies.
+    pattern-either:
+      - pattern: console.$METHOD(..., $REQUEST.body, ...)
+      - pattern: console.$METHOD(..., $DATA.password, ...)
+  - id: nodepass-no-math-random-secrets
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Random values must come from the operating system CSPRNG.
+    pattern: Math.random(...)

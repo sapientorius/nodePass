@@ -1,0 +1,39 @@
+{
+  "name": "@nodepass/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "rtk:dev": "rtk npm run dev",
+    "build": "tsc -p .",
+    "rtk:build": "rtk npm run build",
+    "start": "node dist/server/src/index.js",
+    "rtk:start": "rtk npm start"
+  },
+  "dependencies": {
+    "@feathersjs/errors": "^5.0.35",
+    "@feathersjs/feathers": "^5.0.35",
+    "@feathersjs/koa": "^5.0.35",
+    "@feathersjs/schema": "^5.0.35",
+    "@koa/router": "^15.7.0",
+    "@nodepass/contracts": "0.1.0",
+    "@simplewebauthn/server": "^13.2.0",
+    "@zxcvbn-ts/core": "^3.0.4",
+    "@zxcvbn-ts/language-common": "^3.0.4",
+    "@zxcvbn-ts/language-en": "^3.0.2",
+    "argon2": "^0.44.0",
+    "bcryptjs": "^3.0.2",
+    "csv-parse": "^7.0.3",
+    "csv-stringify": "^6.6.0",
+    "fast-xml-parser": "^5.3.0",
+    "file-type": "^21.0.0",
+    "knex": "^3.1.0",
+    "koa-static": "^5.0.0",
+    "ldapts": "^8.0.0",
+    "mysql2": "^3.15.0",
+    "nodemailer": "^10.2.1",
+    "otpauth": "^9.4.1",
+    "qrcode": "^1.5.4"
+  }
+}

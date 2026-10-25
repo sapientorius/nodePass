@@ -1,0 +1,27 @@
+{
+  "name": "@nodepass/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "rtk:dev": "rtk npm run dev",
+    "build": "vite build",
+    "rtk:build": "rtk npm run build"
+  },
+  "dependencies": {
+    "@nodepass/contracts": "0.1.0",
+    "@simplewebauthn/browser": "^13.2.0",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@zxcvbn-ts/core": "^3.0.4",
+    "@zxcvbn-ts/language-common": "^3.0.4",
+    "@zxcvbn-ts/language-en": "^3.0.2",
+    "date-fns": "^4.4.0",
+    "naive-ui": "^2.43.0",
+    "pinia": "^3.0.3",
+    "vite": "^7.1.0",
+    "vue": "^3.5.22",
+    "vue-i18n": "^11.1.12",
+    "vue-router": "^4.6.3"
+  }
+}

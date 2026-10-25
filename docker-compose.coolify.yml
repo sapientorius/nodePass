@@ -1,0 +1,47 @@
+# Coolify Compose Service. Assign the public HTTPS domain to app:3000 in Coolify.
+# Store all required values in Coolify's secret environment variables.
+services:
+  app:
+    build:
+      context: .
+      target: production
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    expose: ["3000"]
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?Set the HTTPS domain assigned to app}
+      DEPLOYMENT_KEY: ${DEPLOYMENT_KEY:?Generate 32 random bytes as base64}
+      SETUP_TOKEN: ${SETUP_TOKEN:?Generate a random setup token}
+      DB_HOST: db
+      DB_NAME: nodepass
+      DB_USER: nodepass
+      DB_PASSWORD: ${DB_PASSWORD:?Generate a database password}
+      TRUST_PROXY: "1"
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the isolated ingress CIDR}
+    volumes: [nodepass-data:/app/data]
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mariadb:11.8@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: nodepass
+      MARIADB_USER: nodepass
+      MARIADB_PASSWORD: ${DB_PASSWORD:?}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Generate a separate root password}
+    volumes: [database:/var/lib/mysql]
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+volumes:
+  nodepass-data:
+  database:
