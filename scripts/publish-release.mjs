@@ -5,6 +5,8 @@ import {
   releaseIdentity,
   validateRemoteRelease,
   requireVersionAdvance,
+  findReleaseForTag,
+  requireRemoteTagCommit,
 } from "./release-policy.mjs";
 
 if (
@@ -40,6 +42,7 @@ const identity = releaseIdentity(
   manifest.source.commit,
   manifest.tag,
 );
+await requireRemoteTagCommit(api, identity);
 const notes = await readFile(".cache/release/release-notes.md", "utf8");
 const names = (await readdir(".cache/release/assets")).sort();
 const hashes = new Map(
@@ -62,9 +65,9 @@ async function requireNewStableVersion() {
     );
   }
 }
-let response = await api(`releases/tags/${manifest.tag}`),
-  release;
-if (response.status === 404) {
+let release = await findReleaseForTag(api, manifest.tag),
+  response;
+if (!release) {
   await requireNewStableVersion();
   response = await api("releases", {
     method: "POST",
@@ -82,9 +85,6 @@ if (response.status === 404) {
     throw new Error(`Cannot create draft release (${response.status})`);
   release = await response.json();
 } else {
-  if (!response.ok)
-    throw new Error(`Cannot inspect release (${response.status})`);
-  release = await response.json();
   if (validateRemoteRelease(release, identity, notes, hashes) === "published") {
     console.log(
       `Identical immutable release already published: ${release.html_url}`,
@@ -137,6 +137,7 @@ if (
   );
   process.exit(0);
 }
+await requireRemoteTagCommit(api, identity);
 response = await api(`releases/${release.id}`, {
   method: "PATCH",
   headers: { "Content-Type": "application/json" },

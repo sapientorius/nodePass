@@ -13,6 +13,8 @@ import {
   verifyOci,
   validateRemoteRelease,
   requireVersionAdvance,
+  findReleaseForTag,
+  requireRemoteTagCommit,
 } from "../scripts/release-policy.mjs";
 import { validateHosting } from "../scripts/check-release-hosting.mjs";
 import { allowTag, existingRegistryDigest } from "../scripts/publish-image.mjs";
@@ -276,6 +278,109 @@ describe("release OCI integrity and tested-image identity", () => {
 });
 
 describe("publication refuses permission and registry ambiguity", () => {
+  it("verifies lightweight and annotated tags against the tested commit rather than release branch metadata", async () => {
+    const identity = releaseIdentity("0.1.0-rc.1", commit);
+    const direct = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ object: { type: "commit", sha: commit } }),
+        ),
+      );
+    await expect(
+      requireRemoteTagCommit(direct, identity),
+    ).resolves.toBeUndefined();
+    const annotated = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ object: { type: "tag", sha: "b".repeat(40) } }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ object: { type: "commit", sha: commit } }),
+        ),
+      );
+    await expect(
+      requireRemoteTagCommit(annotated, identity),
+    ).resolves.toBeUndefined();
+    expect(annotated.mock.calls.map(([path]) => path)).toEqual([
+      `git/ref/tags/${identity.tag}`,
+      `git/tags/${"b".repeat(40)}`,
+    ]);
+  });
+  it("refuses a moved tag, invalid target, failed lookup and excessive tag indirection", async () => {
+    const identity = releaseIdentity("0.1.0-rc.1", commit);
+    for (const response of [
+      new Response("", { status: 403 }),
+      new Response(
+        JSON.stringify({ object: { type: "commit", sha: "b".repeat(40) } }),
+      ),
+      new Response(JSON.stringify({ object: { type: "blob", sha: commit } })),
+      new Response(
+        JSON.stringify({ object: { type: "tag", sha: "../../other" } }),
+      ),
+    ])
+      await expect(
+        requireRemoteTagCommit(vi.fn().mockResolvedValue(response), identity),
+      ).rejects.toThrow();
+    const loop = vi
+      .fn()
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({ object: { type: "tag", sha: commit } }),
+          ),
+      );
+    await expect(requireRemoteTagCommit(loop, identity)).rejects.toThrow(
+      "indirection limit",
+    );
+  });
+  it("finds existing drafts through the paginated authenticated release list", async () => {
+    const draft = { tag_name: "nodepass-v0.1.0-rc.1", draft: true };
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify(
+            Array.from({ length: 100 }, (_, index) => ({
+              tag_name: `other-${index}`,
+            })),
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify([draft])));
+    expect(await findReleaseForTag(request, draft.tag_name)).toEqual(draft);
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      "releases?per_page=100&page=1",
+      "releases?per_page=100&page=2",
+    ]);
+    expect(
+      await findReleaseForTag(
+        vi.fn().mockResolvedValue(new Response("[]")),
+        draft.tag_name,
+      ),
+    ).toBeNull();
+  });
+  it("never treats API failure or ambiguous drafts as a missing release", async () => {
+    const tag = "nodepass-v0.1.0-rc.1";
+    for (const response of [
+      new Response("", { status: 403 }),
+      new Response("", { status: 404 }),
+      new Response("{}"),
+      new Response(JSON.stringify([{ tag_name: tag }, { tag_name: tag }])),
+    ])
+      await expect(
+        findReleaseForTag(vi.fn().mockResolvedValue(response), tag),
+      ).rejects.toThrow();
+    await expect(
+      findReleaseForTag(
+        vi.fn().mockRejectedValue(new Error("Synthetic network failure")),
+        tag,
+      ),
+    ).rejects.toThrow("network");
+  });
   it("resumes matching drafts and recognizes an identical immutable publication without rewriting it", () => {
     const identity = releaseIdentity("0.1.0-rc.1", commit),
       notes = "Reviewed release notes\n",
@@ -311,7 +416,7 @@ describe("publication refuses permission and registry ambiguity", () => {
     for (const modified of [
       { ...complete, body: "Someone's changed notes" },
       { ...complete, immutable: false },
-      { ...complete, target_commitish: "b".repeat(40) },
+      { ...complete, tag_name: "nodepass-v0.2.0" },
       {
         ...complete,
         assets: [

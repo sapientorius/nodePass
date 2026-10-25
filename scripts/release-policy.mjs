@@ -25,9 +25,10 @@ export function validateRemoteRelease(
   hashes,
   complete = false,
 ) {
+  // GitHub may retain a branch name in target_commitish for an existing tag.
+  // Publication verifies the actual remote Git tag with requireRemoteTagCommit.
   if (
     release.tag_name !== identity.tag ||
-    release.target_commitish !== identity.commit ||
     release.prerelease !== identity.prerelease ||
     release.name !== `nodePass ${identity.version}` ||
     release.body !== notes ||
@@ -65,6 +66,44 @@ export function requireVersionAdvance(previous, next) {
   const changed = after.findIndex((part, index) => part !== before[index]);
   if (changed === -1 || after[changed] < before[changed])
     throw new Error("Stable releases must advance the version");
+}
+
+export async function findReleaseForTag(request, tag) {
+  // The tag endpoint only promises published releases; the authenticated list includes drafts.
+  for (let page = 1; page <= 100; page++) {
+    const response = await request(`releases?per_page=100&page=${page}`);
+    if (!response.ok)
+      throw new Error(`Cannot inspect release history (${response.status})`);
+    const releases = await response.json();
+    if (!Array.isArray(releases)) throw new Error("Invalid release history");
+    const matches = releases.filter((release) => release.tag_name === tag);
+    if (matches.length > 1)
+      throw new Error("Ambiguous release drafts for this tag");
+    if (matches.length === 1) return matches[0];
+    if (releases.length < 100) return null;
+  }
+  throw new Error("Release history limit reached; refusing to assume absence");
+}
+
+export async function requireRemoteTagCommit(request, identity) {
+  let path = `git/ref/tags/${identity.tag}`;
+  for (let depth = 0; depth < 8; depth++) {
+    const response = await request(path);
+    if (!response.ok)
+      throw new Error(`Cannot verify release tag (${response.status})`);
+    const object = (await response.json()).object;
+    if (!/^[a-f0-9]{40}$/.test(object?.sha))
+      throw new Error("Invalid release tag target");
+    if (object.type === "commit") {
+      if (object.sha !== identity.commit)
+        throw new Error("Remote release tag differs from the verified commit");
+      return;
+    }
+    if (object.type !== "tag")
+      throw new Error("Release tag does not identify a commit");
+    path = `git/tags/${object.sha}`;
+  }
+  throw new Error("Release tag indirection limit exceeded");
 }
 
 export async function checkVersions(root) {
