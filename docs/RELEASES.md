@@ -24,6 +24,8 @@ Workflow files do not configure repository settings. A maintainer with repositor
 
 The public hosting preflight checks applied main rules, required reviewers and the release tag restriction. Disabling administrator bypass, release immutability, private reporting and package visibility require separate operator verification. Keep these visibly pending until actually verified.
 
+The publisher performs an actual digest pull with an empty Docker authentication configuration before publishing the GitHub Release. On the first upload, this can stop while the new package is private. Set the package public and rerun only the failed jobs from that run, preserving its tested artifacts. Never remove the public-pull check to obtain a passing release.
+
 ## Prepare a release
 
 From a clean checkout using Node.js 24:

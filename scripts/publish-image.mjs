@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -130,6 +130,33 @@ if (
         ]);
       if ((await existingRegistryDigest(tags[index], token)) !== digest)
         throw new Error("Published image digest mismatch");
+    }
+    const anonymous = resolve(".cache/anonymous-registry");
+    await mkdir(anonymous, { recursive: true });
+    await writeFile(join(anonymous, "config.json"), '{"auths":{}}\n', {
+      flag: "wx",
+      mode: 0o600,
+    });
+    const environment = { ...process.env };
+    for (const key of [
+      "DOCKER_CONFIG",
+      "DOCKER_AUTH_CONFIG",
+      "REGISTRY_AUTH_FILE",
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+    ])
+      delete environment[key];
+    try {
+      execFileSync(
+        "docker",
+        ["--config", anonymous, "pull", `${image}@${digest}`],
+        { stdio: "inherit", env: environment },
+      );
+    } catch (error) {
+      throw new Error(
+        "Anonymous digest pull failed. Set the GHCR package public, then rerun failed jobs from this run without rebuilding.",
+        { cause: error },
+      );
     }
   }
 }
