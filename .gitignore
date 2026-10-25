@@ -18,3 +18,4 @@ output/
 sbom.cdx.json
 *.tsbuildinfo
 *.log
+.vscode/
