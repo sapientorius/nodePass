@@ -6,6 +6,7 @@ import {
   repository,
   verifyChecksums,
   verifyOci,
+  sha256,
 } from "./release-policy.mjs";
 
 const version = await checkVersions(process.cwd());
@@ -31,8 +32,13 @@ execFileSync("git", [
   identity.commit,
   "origin/main",
 ]);
+if (!/^[a-f0-9]{64}$/.test(process.env.EXPECTED_CHECKSUMS_SHA256))
+  throw new Error("Missing verification job checksum identity");
 const directory = ".cache/release/assets",
-  checked = await verifyChecksums(directory);
+  checked = await verifyChecksums(
+    directory,
+    process.env.EXPECTED_CHECKSUMS_SHA256,
+  );
 const actual = await readdir(directory);
 if (
   actual.length !== checked.size + 1 ||
@@ -62,6 +68,8 @@ if (
   checked.size !== 3
 )
   throw new Error("Release artifact/source/run mismatch");
+if ((await sha256(".cache/release/release-notes.md")) !== manifest.notesSha256)
+  throw new Error("Release notes differ from the verified manifest");
 const digest = await verifyOci(
   ".cache/release/oci",
   identity,

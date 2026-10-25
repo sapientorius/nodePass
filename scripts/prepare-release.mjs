@@ -73,11 +73,21 @@ export async function prepareRelease(root, identity, context) {
   if (sbom.bomFormat !== "CycloneDX" || !sbom.components?.length)
     throw new Error("Missing container SBOM components");
   await cp(join(root, "sbom.cdx.json"), join(assets, "sbom.cdx.json"));
+  const changelog = await readFile(join(root, "CHANGELOG.md"), "utf8");
+  const notes = changelog
+    .split(`## [${identity.version}]`)[1]
+    ?.split(/\n## \[/)[0];
+  if (!notes?.trim()) throw new Error("Empty release notes");
+  await writeFile(
+    join(directory, "release-notes.md"),
+    `${notes.trim()}\n\n### Verified artifacts\n\n- Source commit: \`${identity.commit}\`\n- Container: \`${reference}\`\n- Platform: Linux amd64\n- [Complete verification run](${context.url})\n\nVerify SHA256SUMS and the release attestations before installation. The deployment bundle contains Compose files pinned to this image digest.\n`,
+  );
   const manifest = {
     format: "nodepass-release-1",
     version: identity.version,
     tag: identity.tag,
     source: { repository, commit: identity.commit, ref: context.ref },
+    notesSha256: await sha256(join(directory, "release-notes.md")),
     image: {
       name: identity.image,
       digest,
@@ -104,16 +114,11 @@ export async function prepareRelease(root, identity, context) {
     .sort())
     hashes.push(`${await sha256(join(assets, file))}  ${file}`);
   await writeFile(join(assets, "SHA256SUMS"), hashes.join("\n") + "\n");
-  const changelog = await readFile(join(root, "CHANGELOG.md"), "utf8");
-  const notes = changelog
-    .split(`## [${identity.version}]`)[1]
-    ?.split(/\n## \[/)[0];
-  if (!notes?.trim()) throw new Error("Empty release notes");
-  await writeFile(
-    join(directory, "release-notes.md"),
-    `${notes.trim()}\n\n### Verified artifacts\n\n- Source commit: \`${identity.commit}\`\n- Container: \`${reference}\`\n- Platform: Linux amd64\n- [Complete verification run](${context.url})\n\nVerify SHA256SUMS and the release attestations before installation. The deployment bundle contains Compose files pinned to this image digest.\n`,
-  );
-  return { digest, manifest };
+  return {
+    digest,
+    manifest,
+    checksumsSha256: await sha256(join(assets, "SHA256SUMS")),
+  };
 }
 
 if (
@@ -152,7 +157,7 @@ if (
     const { appendFile } = await import("node:fs/promises");
     await appendFile(
       process.env.GITHUB_OUTPUT,
-      `digest=${result.digest}\nversion=${version}\nprerelease=${identity.prerelease}\n`,
+      `digest=${result.digest}\nchecksums=${result.checksumsSha256}\nversion=${version}\nprerelease=${identity.prerelease}\n`,
     );
   }
   console.log(

@@ -228,7 +228,15 @@ export async function verifyOci(directory, identity, expectedConfig) {
   return descriptor.digest;
 }
 
-export async function verifyChecksums(directory) {
+export async function verifyChecksums(directory, expectedHash) {
+  if (
+    expectedHash !== undefined &&
+    (!/^[a-f0-9]{64}$/.test(expectedHash) ||
+      (await sha256(join(directory, "SHA256SUMS"))) !== expectedHash)
+  )
+    throw new Error(
+      "Release checksum list differs from the verification job output",
+    );
   const lines = (await readFile(join(directory, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n"),

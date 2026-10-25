@@ -108,6 +108,27 @@ describe("release source and version boundaries", () => {
 });
 
 describe("release OCI integrity and tested-image identity", () => {
+  it("rejects a consistently replaced checksum list and assets against the verification job identity", async () => {
+    const directory = await temporary();
+    for (const name of ["sbom.cdx.json", "release-manifest.json"])
+      await writeFile(join(directory, name), "{}");
+    const hash = await sha256(join(directory, "sbom.cdx.json"));
+    await writeFile(
+      join(directory, "SHA256SUMS"),
+      `${hash}  sbom.cdx.json\n${hash}  release-manifest.json\n`,
+    );
+    const expected = await sha256(join(directory, "SHA256SUMS"));
+    expect((await verifyChecksums(directory, expected)).size).toBe(2);
+    await writeFile(join(directory, "sbom.cdx.json"), '{"replaced":true}');
+    const replacement = await sha256(join(directory, "sbom.cdx.json"));
+    await writeFile(
+      join(directory, "SHA256SUMS"),
+      `${replacement}  sbom.cdx.json\n${hash}  release-manifest.json\n`,
+    );
+    await expect(verifyChecksums(directory, expected)).rejects.toThrow(
+      "verification job output",
+    );
+  });
   async function fixture(
     options: {
       architecture?: string;
