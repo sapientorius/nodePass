@@ -1,4 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
+import { version } from "@nodepass/contracts";
 import { existsSync } from "node:fs";
 import { once } from "node:events";
 import { loadConfig } from "../packages/server/src/config.js";
@@ -1021,7 +1022,7 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
     const history = await request("/api/v1/updates/releases");
     expect(history.response.status).toBe(200);
     expect(history.value).toMatchObject({
-      installedVersion: "0.1.0-rc.1",
+      installedVersion: version,
       latestVersion: "0.3.0",
       releases: [
         { version: "0.3.0", notesStatus: "verified", notes: f.row.body },
