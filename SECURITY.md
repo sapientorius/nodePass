@@ -10,6 +10,6 @@ Reports concern nodePass. The upstream sysPass project's contact address is not 
 
 ## Version and verification policy
 
-The current project version is 0.1.0-rc.1. Report against the exact commit when possible. No long-term support branches or fixed support periods are promised. Production deployment requires the exact commit's **Required release checks** and operator-specific validation; local reports alone are insufficient.
+The current project version is 0.1.0. Report against the exact commit when possible. No long-term support branches or fixed support periods are promised. Production deployment requires the exact commit's **Required release checks** and operator-specific validation; local reports alone are insufficient.
 
 Read the [security model](docs/SECURITY.md) for trust boundaries and known constraints, and [Operations](docs/OPERATIONS.md#release-and-hosting-checks) for release requirements. Automated scans do not constitute an independent security audit.
