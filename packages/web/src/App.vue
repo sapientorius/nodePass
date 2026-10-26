@@ -99,6 +99,7 @@ export default defineComponent({
         { key: "clients", icon: "folder", permission: "mgmCustomers" },
         { key: "tags", icon: "folder", permission: "mgmTags" },
         { key: "security", icon: "shield", permission: "" },
+        { key: "updates", icon: "clock", permission: "" },
         { key: "events", icon: "clock", permission: "evl" },
         { key: "backups", icon: "folder", permission: "configBackup" },
         {
@@ -112,9 +113,10 @@ export default defineComponent({
         { key: "presets", icon: "folder", permission: "mgmItemsPreset" },
         { key: "fields", icon: "folder", permission: "mgmCustomFields" },
       ]
-        .filter(
-          (item) =>
-            viewer?.isAppAdmin || !!viewer?.permissions[item.permission],
+        .filter((item) =>
+          item.key === "updates"
+            ? !!viewer?.isAppAdmin
+            : viewer?.isAppAdmin || !!viewer?.permissions[item.permission],
         )
         .map((item) => ({
           key: item.label ?? item.key,

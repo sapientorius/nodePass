@@ -115,3 +115,24 @@ export interface UpdateStatus {
     failed: number;
   };
 }
+
+export interface ReleaseInformation {
+  version: string;
+  publishedAt: number | null;
+  url: string;
+  notes: string | null;
+  notesStatus: "verified" | "pending" | "unavailable" | "mismatch";
+  verifiedAt: number | null;
+}
+export interface ReleaseHistory {
+  installedVersion: string;
+  latestVersion: string | null;
+  installedPublished: boolean | null;
+  channel: "stable" | "rc";
+  lastSuccessAt: number | null;
+  nextCheckAt: number;
+  error: UpdateError | null;
+  stale: boolean;
+  complete: boolean;
+  releases: ReleaseInformation[];
+}

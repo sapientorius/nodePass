@@ -283,5 +283,66 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
       await service.deliver();
       expect(mailTo).toHaveBeenCalledTimes(22);
     });
+    it("reads version history without network I/O, including current and unpublished installations", async () => {
+      expect(await service.releases()).toMatchObject({
+        installedVersion: "0.1.0",
+        latestVersion: null,
+        installedPublished: null,
+        stale: true,
+      });
+      await service.checkDue();
+      const before = request.mock.calls.length;
+      expect(await service.releases()).toMatchObject({
+        latestVersion: "0.3.0",
+        installedPublished: false,
+        complete: true,
+        releases: [{ version: "0.3.0", notesStatus: "verified" }],
+      });
+      await service.releases();
+      expect(request).toHaveBeenCalledTimes(before);
+      const saved = await getSetting<any>(r.db, "updates/history", null);
+      saved.entries["0.3.0"].info.url = "javascript:alert(1)";
+      saved.entries["0.3.0"].info.version = "untrusted cache label";
+      await r
+        .db("nodepass_settings")
+        .where({ id: "updates/history" })
+        .update({ value: JSON.stringify(saved) });
+      expect((await service.releases()).releases[0]).toMatchObject({
+        version: "0.3.0",
+        url: "https://github.com/sapientorius/nodePass/releases/tag/nodepass-v0.3.0",
+      });
+      const current = make("0.3.0");
+      expect(await current.releases()).toMatchObject({
+        latestVersion: "0.3.0",
+        installedPublished: true,
+      });
+      await current.stop();
+    });
+    it("isolates historical manifest failure from security updates and email delivery", async () => {
+      const f = updateFixture();
+      const old = updateFixture("0.1.0", {
+        format: "nodepass-security-1",
+        fixes: [],
+      });
+      old.row.assets[0]!.id = 456;
+      request.mockImplementation(async (url) => {
+        if (String(url).endsWith("/assets/456"))
+          throw new Error("Synthetic historic outage");
+        return String(url).includes("/assets/")
+          ? new Response(f.data)
+          : new Response(JSON.stringify([f.row, old.row]));
+      });
+      await service.checkDue();
+      expect(await service.status(1)).toMatchObject({
+        error: null,
+        available: { critical: true },
+      });
+      expect(
+        (await service.releases()).releases.find((r) => r.version === "0.1.0")!
+          .notesStatus,
+      ).toBe("unavailable");
+      await service.deliver();
+      expect(mailTo).toHaveBeenCalledOnce();
+    });
   },
 );

@@ -5,6 +5,7 @@ import {
   version,
   type UpdateStatus,
   type UpdateError,
+  type ReleaseHistory,
 } from "@nodepass/contracts";
 import { getSetting, putSetting, type Database } from "../db.js";
 import type { Integrations } from "./integrations.js";
@@ -14,7 +15,12 @@ import {
   UpdateFailure,
   type KnownRelease,
   type ReleaseCache,
+  sameRelease,
 } from "./update-source.js";
+import {
+  refreshReleaseHistory,
+  type StoredHistory,
+} from "./release-history.js";
 
 interface State {
   lastAttemptAt: number | null;
@@ -159,6 +165,71 @@ export class Updates {
     await putSetting(this.db, `updates/ack/${userId}`, id);
   }
 
+  async releases(): Promise<ReleaseHistory> {
+    const state = await this.load();
+    const history = await getSetting<StoredHistory | null>(
+      this.db,
+      "updates/history",
+      null,
+    );
+    const catalog = Object.values(state.cache)
+      .flatMap((page) => page.releases)
+      .filter((r) => this.installed.includes("-") || !r.version.includes("-"))
+      .sort((a, b) => compareVersions(b.version, a.version));
+    const releases = catalog
+      .filter((r) => compareVersions(r.version, this.installed) >= 0)
+      .map((release) => {
+        const entry = history?.entries[release.version];
+        if (!entry)
+          return {
+            version: release.version,
+            publishedAt: release.publishedAt ?? null,
+            url: releaseUrl(release.version),
+            notes: null,
+            verifiedAt: null,
+            notesStatus: "pending" as const,
+          };
+        const status = !sameRelease(entry.identity, release)
+          ? "unavailable"
+          : entry.info.notesStatus === "verified" &&
+              entry.info.notes !== release.notes
+            ? "pending"
+            : entry.info.notesStatus;
+        return {
+          version: release.version,
+          publishedAt: release.publishedAt ?? null,
+          url: releaseUrl(release.version),
+          notes: entry.info.notes,
+          verifiedAt: entry.info.verifiedAt,
+          notesStatus: status,
+        };
+      });
+    const stale =
+      state.lastSuccessAt === null ||
+      this.now() - state.lastSuccessAt > 7200000;
+    const error = state.error ?? history?.error ?? null;
+    return {
+      installedVersion: this.installed,
+      latestVersion: catalog[0]?.version ?? null,
+      installedPublished:
+        state.lastSuccessAt === null
+          ? null
+          : catalog.some((r) => r.version === this.installed),
+      channel: this.installed.includes("-") ? "rc" : "stable",
+      lastSuccessAt: state.lastSuccessAt,
+      nextCheckAt: state.nextCheckAt,
+      error,
+      stale,
+      complete:
+        !stale &&
+        !error &&
+        !!history &&
+        history.checkedAt >= (state.lastSuccessAt ?? 0) &&
+        releases.every((r) => r.notesStatus === "verified"),
+      releases,
+    };
+  }
+
   checkDue(): Promise<void> {
     if (this.stopped) return Promise.resolve();
     if (this.checking) return this.checking;
@@ -174,18 +245,24 @@ export class Updates {
     state.nextCheckAt = this.now() + 3600000;
     // Persist the schedule before network I/O, including on process restart/crash.
     await putSetting(this.db, "updates/state", state);
+    const signal = AbortSignal.any([
+      this.controller.signal,
+      AbortSignal.timeout(60000),
+    ]);
+    let historyBudget: number | null = null;
     try {
       const result = await this.source.check(
         this.installed,
         state.latest,
         state.cache,
-        AbortSignal.any([this.controller.signal, AbortSignal.timeout(60000)]),
+        signal,
       );
       state.latest = result.latest;
       state.cache = result.cache;
       state.nextCheckAt = result.nextCheckAt;
       state.lastSuccessAt = this.now();
       state.error = null;
+      historyBudget = 10 - result.manifestFetches;
     } catch (error) {
       if (this.stopped) return;
       state.error =
@@ -202,6 +279,34 @@ export class Updates {
       );
     }
     await putSetting(this.db, "updates/state", state);
+    // Publish the security decision before historical I/O. Mail delivery stays independent.
+    if (historyBudget !== null && !this.stopped) {
+      try {
+        const previous = await getSetting<StoredHistory | null>(
+          this.db,
+          "updates/history",
+          null,
+        );
+        const history = await refreshReleaseHistory(
+          this.source,
+          this.installed,
+          state.cache,
+          previous,
+          state.latest,
+          historyBudget,
+          signal,
+          this.now,
+        );
+        if (this.stopped) return;
+        await putSetting(this.db, "updates/history", history);
+        if (history.retryAt > state.nextCheckAt) {
+          state.nextCheckAt = history.retryAt;
+          await putSetting(this.db, "updates/state", state);
+        }
+      } catch {
+        console.error(JSON.stringify({ event: "updates.history.failed" }));
+      }
+    }
   }
   deliver(): Promise<void> {
     if (this.stopped) return Promise.resolve();

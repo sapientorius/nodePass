@@ -12,6 +12,7 @@ export const securityFixture: ReleaseSecurity = {
 export function updateFixture(
   version = "0.3.0",
   security: unknown = securityFixture,
+  notes = `# nodePass ${version}\n\nSynthetic release notes.\n`,
 ) {
   const manifest = {
     format: "nodepass-release-1",
@@ -23,6 +24,7 @@ export function updateFixture(
       ref: `refs/tags/nodepass-v${version}`,
     },
     security,
+    notesSha256: createHash("sha256").update(notes, "utf8").digest("hex"),
   };
   const data = Buffer.from(JSON.stringify(manifest));
   const row = {
@@ -31,6 +33,8 @@ export function updateFixture(
     draft: false,
     prerelease: version.includes("-"),
     immutable: true,
+    body: notes,
+    published_at: "2026-10-26T10:00:00Z",
     html_url: `https://github.com/sapientorius/nodePass/releases/tag/${manifest.tag}`,
     assets: [
       {

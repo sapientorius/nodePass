@@ -24,6 +24,12 @@ SMTP requires TLS with certificate validation. Syslog UDP sends sanitized events
 
 ## Update notifications
 
+Application administrators can open **Versions & updates** at `/manage/updates`, also linked from update notices. The page shows the installed version, latest known version in the installation's Stable/RC channel, last successful check and expandable release information from the installed version onward. Reading or reopening the page uses the server cache and does not force a GitHub request. An unpublished installation version and an unknown latest version are explicitly identified.
+
+Release texts are displayed in their original published language only after the manifest asset's SHA-256 and release identity have been verified and the exact UTF-8 text matches `notesSha256`. GitHub permits edits to release notes even for immutable releases. If a text no longer matches, a previously verified cached copy remains visible with its verification time and a warning. Without a verified copy, the page shows the check status and official release link. Missing historical security catalogues do not prevent checking the text hash.
+
+Each hourly run downloads at most ten manifests, including the current update's manifest. The update/security decision takes priority, followed by the installed release and intermediate versions in descending version order. Manifest identities and hashes are cached; pending historical texts continue on subsequent hourly runs. Historical text failures never suppress a valid security warning or its email. The browser uses a bundled Markdown parser and an allowlist of Vue elements; HTML, images, embeds and unsafe link schemes cannot introduce executable markup or automatic remote requests.
+
 After setup, the server checks the official `sapientorius/nodePass` GitHub Releases immediately, then hourly. The next check is persisted before network I/O, so restarts do not cause repeated requests. Stable installations consider stable releases; release candidates also consider newer RCs. Version order determines the newest eligible release. This does not install software or replace the release-artifact verification procedure.
 
 Allow outbound HTTPS to `api.github.com` and `release-assets.githubusercontent.com`. Requests use no GitHub token, installation identifier, installed version, hostname or vault data. GitHub necessarily sees the server's source IP. Checks use conditional requests, strict request/body/page limits and the API's polling/rate-limit delays. No browser resources are loaded from GitHub. GitHub/TLS is the metadata trust anchor; hashes obtained from GitHub do not provide an independent signature.
@@ -35,6 +41,8 @@ Unreachable sources, mutable releases, missing/invalid security metadata or hash
 With SMTP enabled, each distinct valid email address of an active application administrator receives one plain-text English notification per target version. The audit integration's recipient list is independent. New administrators, changed addresses and later SMTP activation receive the still-applicable notice. Failed deliveries retry with backoff from one minute to one hour; successful deliveries survive restarts without daily reminders. SMTP remains subject to verified TLS and explicit recipient acceptance. A crash or connection loss after SMTP acceptance but before saving delivery can cause a duplicate: SMTP and the local database cannot provide an atomic exactly-once transaction. Invalid or missing administrator addresses do not prevent other recipients from receiving mail.
 
 State and acknowledgements use the existing `nodepass_settings` sidecar table and are included in backups. The update worker, mail retries and audit delivery have independent failure handling. As with other background work, only one application process is supported.
+
+Release texts are limited to 128 KiB each and a total of 4 MiB of serialized text in the discovery cache, prioritizing the installed version and then the newest versions. Texts exceeding these limits are marked unavailable and retain any previously verified copy. This bounds the security check's persisted state independently of historical text storage; failure to store historical information does not block security notifications.
 
 ## Backups and restore
 

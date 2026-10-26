@@ -875,6 +875,10 @@ export async function createApp(
     const id = await admin(ctx);
     ctx.body = await updates.status(id.user.id);
   });
+  router.get("/api/v1/updates/releases", async (ctx) => {
+    await admin(ctx);
+    ctx.body = await updates.releases();
+  });
   router.post("/api/v1/updates/acknowledgement", async (ctx) => {
     const id = await admin(ctx),
       data = body(ctx);

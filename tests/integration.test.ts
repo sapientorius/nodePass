@@ -10,6 +10,7 @@ import { encryptDefuse } from "../packages/server/src/compat/defuse.js";
 import { putSetting } from "../packages/server/src/db.js";
 import { UpdateSource } from "../packages/server/src/services/update-source.js";
 import { updateFixture } from "./update-fixtures.js";
+import { refreshReleaseHistory } from "../packages/server/src/services/release-history.js";
 // This suite is mandatory in CI. Local opt-in avoids accidentally targeting a production DB.
 const enabled = process.env.NODEPASS_INTEGRATION === "1";
 describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
@@ -993,6 +994,20 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
       {},
       new AbortController().signal,
     );
+    await putSetting(
+      runtime.db,
+      "updates/history",
+      await refreshReleaseHistory(
+        source,
+        "0.1.0-rc.1",
+        checked.cache,
+        null,
+        checked.latest,
+        10 - checked.manifestFetches,
+        new AbortController().signal,
+        Date.now,
+      ),
+    );
     await putSetting(runtime.db, "updates/state", {
       lastAttemptAt: Date.now(),
       lastSuccessAt: Date.now(),
@@ -1003,6 +1018,22 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
     });
     const status = await request("/api/v1/updates");
     expect(status.response.status).toBe(200);
+    const history = await request("/api/v1/updates/releases");
+    expect(history.response.status).toBe(200);
+    expect(history.value).toMatchObject({
+      installedVersion: "0.1.0-rc.1",
+      latestVersion: "0.3.0",
+      releases: [
+        { version: "0.3.0", notesStatus: "verified", notes: f.row.body },
+      ],
+    });
+    expect(
+      (
+        await request("/api/v1/updates/releases", "GET", undefined, {
+          cookie: "",
+        })
+      ).response.status,
+    ).toBe(401);
     expect(status.value.available).toMatchObject({
       critical: true,
       acknowledged: false,
@@ -1050,6 +1081,9 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
         .where({ id: session.id })
         .update({ complete: 0 });
       expect((await request("/api/v1/updates")).response.status).toBe(403);
+      expect((await request("/api/v1/updates/releases")).response.status).toBe(
+        403,
+      );
       await runtime
         .db("nodepass_sessions")
         .where({ id: session.id })
@@ -1060,6 +1094,9 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
           .where({ id: 1 })
           .update({ isAdminApp: 0, isAdminAcc });
         expect((await request("/api/v1/updates")).response.status).toBe(403);
+        expect(
+          (await request("/api/v1/updates/releases")).response.status,
+        ).toBe(403);
         expect(
           (await request("/api/v1/updates/acknowledgement", "POST", data))
             .response.status,

@@ -18,6 +18,7 @@ import { defaultPolicy } from "@nodepass/contracts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import TransferView from "./TransferView.vue";
+import UpdatesView from "./UpdatesView.vue";
 import IntegrationsView from "./IntegrationsView.vue";
 import TokensView from "./TokensView.vue";
 import PresetsView from "./PresetsView.vue";
@@ -44,6 +45,7 @@ export default defineComponent({
     Icon,
     PageAccent,
     TransferView,
+    UpdatesView,
     IntegrationsView,
     TokensView,
     PresetsView,
@@ -265,6 +267,7 @@ export default defineComponent({
             "integrations",
             "tokens",
             "presets",
+            "updates",
           ].includes(this.section)
         )
           this.rows = await api(
@@ -425,6 +428,7 @@ export default defineComponent({
             'integrations',
             'tokens',
             'presets',
+            'updates',
           ].includes(section)
         "
         type="primary"
@@ -442,11 +446,11 @@ export default defineComponent({
         {{ $t("events") }}</n-button
       >
     </div>
-    <TransferView v-if="section === 'transfer'" /><IntegrationsView
-      v-else-if="section === 'integrations'"
-    /><TokensView v-else-if="section === 'tokens'" /><PresetsView
-      v-else-if="section === 'presets'"
-    />
+    <UpdatesView v-if="section === 'updates'" /><TransferView
+      v-else-if="section === 'transfer'"
+    /><IntegrationsView v-else-if="section === 'integrations'" /><TokensView
+      v-else-if="section === 'tokens'"
+    /><PresetsView v-else-if="section === 'presets'" />
     <n-card v-else-if="section === 'security'" class="settings-card"
       ><n-form
         label-placement="left"

@@ -18,14 +18,25 @@ export interface Release {
   id: number;
   immutable: boolean;
   asset: { id: number; size: number; digest: string } | null;
+  notes?: string | null;
+  publishedAt?: number | null;
 }
 export type ReleaseCache = Record<
   string,
-  { etag: string | null; releases: Release[]; count: number }
+  { etag: string | null; releases: Release[]; count: number; notesFor?: string }
 >;
 export interface KnownRelease {
   release: Release;
   security: ReleaseSecurity;
+  notesSha256?: string | null;
+}
+export function sameRelease(a: Release, b: Release): boolean {
+  return (
+    a.version === b.version &&
+    a.id === b.id &&
+    a.immutable === b.immutable &&
+    JSON.stringify(a.asset) === JSON.stringify(b.asset)
+  );
 }
 export class UpdateFailure extends Error {
   constructor(
@@ -108,6 +119,16 @@ function parseReleases(value: unknown): Release[] {
         id: row.id,
         immutable: row.immutable,
         asset: a ? { id: a.id, size: a.size, digest: a.digest } : null,
+        notes:
+          typeof row.body === "string" &&
+          Buffer.byteLength(row.body, "utf8") <= 128 * 1024
+            ? row.body
+            : null,
+        publishedAt:
+          typeof row.published_at === "string" &&
+          Number.isFinite(Date.parse(row.published_at))
+            ? Date.parse(row.published_at)
+            : null,
       },
     ];
   });
@@ -174,6 +195,7 @@ export class UpdateSource {
     latest: KnownRelease | null;
     cache: ReleaseCache;
     nextCheckAt: number;
+    manifestFetches: number;
   }> {
     if (
       previous &&
@@ -188,10 +210,15 @@ export class UpdateSource {
       if (page > 10) return invalid();
       const key = String(page),
         cached = oldCache[key];
+      const enriched =
+        cached?.notesFor === installed &&
+        cached.releases.every(
+          (r) => Object.hasOwn(r, "notes") && Object.hasOwn(r, "publishedAt"),
+        );
       const response = await this.get(
         `${api}releases?per_page=100&page=${page}`,
         signal,
-        cached?.etag,
+        enriched ? cached?.etag : null,
       );
       const poll = Number(response.headers.get("x-poll-interval"));
       if (Number.isFinite(poll) && poll > 7 * 86400) {
@@ -201,12 +228,12 @@ export class UpdateSource {
       if (Number.isFinite(poll) && poll > 0)
         nextCheckAt = Math.max(nextCheckAt, this.now() + poll * 1000);
       let rows: Release[], count: number;
-      if (response.status === 304 && cached) {
+      if (response.status === 304 && cached && enriched) {
         await response.body?.cancel();
-        rows = cached.releases;
+        rows = cached.releases.map((release) => ({ ...release }));
         // Cache the original page length: ignored tags/drafts still occupy a page.
         count = cached.count;
-        cache[key] = cached;
+        cache[key] = { ...cached, releases: rows };
       } else {
         if (!response.ok) {
           await response.body?.cancel();
@@ -229,6 +256,29 @@ export class UpdateSource {
       }
       if (count < 100) break;
     }
+    // Historical text must not inflate the security state beyond DB/request limits.
+    // Count serialized bytes as control characters can expand in JSON.
+    let notesBytes = 0;
+    for (const release of [...releases.values()].sort((a, b) =>
+      a.version === installed
+        ? -1
+        : b.version === installed
+          ? 1
+          : compareVersions(b.version, a.version),
+    )) {
+      const size = Buffer.byteLength(
+        JSON.stringify(release.notes ?? null),
+        "utf8",
+      );
+      if (
+        (!installed.includes("-") && release.version.includes("-")) ||
+        compareVersions(release.version, installed) < 0 ||
+        notesBytes + size > 4 * 1024 ** 2
+      )
+        release.notes = null;
+      else notesBytes += size;
+    }
+    for (const page of Object.values(cache)) page.notesFor = installed;
     const candidate = [...releases.values()]
       .filter(
         (r) =>
@@ -243,13 +293,48 @@ export class UpdateSource {
         compareVersions(candidate.version, previous.release.version) < 0)
     )
       return invalid();
-    if (!candidate) return { latest: null, cache, nextCheckAt };
+    if (!candidate)
+      return { latest: null, cache, nextCheckAt, manifestFetches: 0 };
     if (!candidate.immutable || !candidate.asset) return invalid();
     if (previous?.release.version === candidate.version) {
-      if (JSON.stringify(previous.release) !== JSON.stringify(candidate))
-        return invalid();
-      return { latest: previous, cache, nextCheckAt };
+      if (!sameRelease(previous.release, candidate)) return invalid();
+      return { latest: previous, cache, nextCheckAt, manifestFetches: 0 };
     }
+    const manifest = await this.manifest(candidate, signal);
+    const security = validateReleaseSecurity(
+      manifest.security,
+      candidate.version,
+    );
+    // Immutable releases carry the complete earlier catalogue, without silently dropping warnings.
+    if (
+      previous?.security.fixes.some(
+        (fix) =>
+          !security.fixes.some(
+            (next) => JSON.stringify(next) === JSON.stringify(fix),
+          ),
+      )
+    )
+      return invalid();
+    const notesSha256 =
+      typeof manifest.notesSha256 === "string" &&
+      /^[a-f0-9]{64}$/.test(manifest.notesSha256) &&
+      manifest.notesSha256.length === 64
+        ? manifest.notesSha256
+        : null;
+    return {
+      latest: { release: candidate, security, notesSha256 },
+      cache,
+      nextCheckAt,
+      manifestFetches: 1,
+    };
+  }
+
+  /** Only this bounded, identity-checked path is shared by update and history checks. */
+  async manifest(
+    candidate: Release,
+    signal: AbortSignal,
+  ): Promise<{ security?: unknown; notesSha256?: unknown }> {
+    if (!candidate.immutable || !candidate.asset) return invalid();
     let response = await this.get(
       `${api}releases/assets/${candidate.asset.id}`,
       signal,
@@ -301,20 +386,6 @@ export class UpdateSource {
       manifest.source.ref !== `refs/tags/nodepass-v${candidate.version}`
     )
       return invalid();
-    const security = validateReleaseSecurity(
-      manifest.security,
-      candidate.version,
-    );
-    // Immutable releases carry the complete earlier catalogue, without silently dropping warnings.
-    if (
-      previous?.security.fixes.some(
-        (fix) =>
-          !security.fixes.some(
-            (next) => JSON.stringify(next) === JSON.stringify(fix),
-          ),
-      )
-    )
-      return invalid();
-    return { latest: { release: candidate, security }, cache, nextCheckAt };
+    return { security: manifest.security, notesSha256: manifest.notesSha256 };
   }
 }

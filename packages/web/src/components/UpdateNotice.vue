@@ -43,6 +43,9 @@ export default defineComponent({
         }}
       </p>
       <div class="update-actions">
+        <router-link v-if="!panel" to="/manage/updates">{{
+          $t("updatesDetails")
+        }}</router-link>
         <a
           :href="status.available.url"
           target="_blank"
@@ -62,6 +65,7 @@ export default defineComponent({
       $t("updatesCheckFailed")
     }}</n-alert>
     <template v-if="panel">
+      <router-link to="/manage/updates">{{ $t("updatesDetails") }}</router-link>
       <p v-if="!status.available && !status.error && !status.stale">
         {{ $t("updatesCurrent") }}
       </p>
