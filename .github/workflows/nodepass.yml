@@ -63,7 +63,7 @@ jobs:
           NODEPASS_REQUIRE_PHP_REFERENCE: "1"
       - run: npm exec playwright -- install --with-deps chromium
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: nodepass-verification
@@ -138,7 +138,7 @@ jobs:
           else
             npm run release:prepare -- --dry-run
           fi
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: startsWith(github.ref, 'refs/tags/') && github.repository == 'sapientorius/nodePass'
         with:
           name: nodepass-release-${{ github.sha }}
@@ -149,7 +149,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: nodepass-sbom
@@ -239,7 +239,7 @@ jobs:
       - run: node scripts/ci-env.mjs
       - run: node --env-file=.cache/integration.env scripts/wait-db.mjs
       - run: node scripts/zap.mjs
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: nodepass-application-scan
