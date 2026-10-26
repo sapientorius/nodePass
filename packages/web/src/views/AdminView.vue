@@ -4,6 +4,7 @@ import {
   NButton,
   NCard,
   NDataTable,
+  NTag,
   NForm,
   NFormItem,
   NInput,
@@ -96,6 +97,12 @@ export default defineComponent({
     ],
   }),
   computed: {
+    missingUserAssignment() {
+      return (
+        this.section === "users" &&
+        (this.form.userGroupId == null || this.form.userProfileId == null)
+      );
+    },
     additionalGroupOptions() {
       return this.options(
         this.groups.filter((group) => group.id !== this.form.userGroupId),
@@ -176,6 +183,29 @@ export default defineComponent({
           ),
           key: k,
         })),
+        ...(this.section === "users"
+          ? [
+              {
+                title: this.$t("signIn"),
+                key: "isDisabled",
+                render: (row: any) =>
+                  h(
+                    NTag,
+                    {
+                      size: "small",
+                      type: row.isDisabled ? "error" : "success",
+                      bordered: false,
+                    },
+                    {
+                      default: () =>
+                        this.$t(
+                          row.isDisabled ? "signInBlocked" : "signInAllowed",
+                        ),
+                    },
+                  ),
+              },
+            ]
+          : []),
         ...(this.section === "events"
           ? []
           : [
@@ -285,7 +315,7 @@ export default defineComponent({
     },
     open(row?: any) {
       this.editing = row?.id ?? 0;
-      const userGroupId = row?.userGroupId ?? this.groups[0]?.id;
+      const userGroupId = row?.userGroupId ?? null;
       this.form =
         this.section === "users"
           ? {
@@ -293,7 +323,7 @@ export default defineComponent({
               login: row?.login ?? "",
               email: row?.email ?? "",
               userGroupId,
-              userProfileId: row?.userProfileId ?? this.profiles[0]?.id,
+              userProfileId: row?.userProfileId ?? null,
               isDisabled: !!row?.isDisabled,
               isAdminApp: !!row?.isAdminApp,
               isAdminAcc: !!row?.isAdminAcc,
@@ -332,6 +362,7 @@ export default defineComponent({
       );
     },
     async save() {
+      if (this.busy || this.missingUserAssignment) return;
       await this.run(async () => {
         const data = { ...this.form };
         if (this.section === "users" && !useSession().viewer?.isAppAdmin) {
@@ -508,6 +539,7 @@ export default defineComponent({
       v-else
       :columns="columns"
       :data="rows"
+      :scroll-x="section === 'users' ? 700 : undefined"
       :loading="busy"
       :bordered="false"
       :row-key="(row: any) => row.id"
@@ -536,13 +568,13 @@ export default defineComponent({
               autocomplete="new-password" /></n-form-item
           ><PasswordStrength
             :value="form.password"
-            v-bind="session().passwordPolicy" /><n-form-item
-            :label="$t('email')"
+            v-bind="session().passwordPolicy"
+          /><n-form-item :label="$t('email')"
             ><n-input
               :input-props="{ 'aria-label': $t('email') }"
               v-model:value="form.email"
               type="text" /></n-form-item
-          ><n-form-item :label="$t('primaryGroup')"
+          ><n-form-item :label="$t('primaryGroup')" required
             ><template #label
               ><span class="user-group-label"
                 >{{ $t("primaryGroup")
@@ -554,6 +586,7 @@ export default defineComponent({
               filterable
               :input-props="{
                 'aria-label': $t('primaryGroup'),
+                'aria-required': true,
               }"
               :value="form.userGroupId"
               @update:value="setPrimaryGroup"
@@ -576,28 +609,35 @@ export default defineComponent({
                 'aria-label': $t('additionalGroups'),
               }"
             /> </n-form-item
-          ><n-form-item :label="$t('profiles')"
+          ><n-form-item :label="$t('profiles')" required
             ><n-select
               filterable
-              :input-props="{ 'aria-label': $t('profiles') }"
+              :input-props="{
+                'aria-label': $t('profiles'),
+                'aria-required': true,
+              }"
               v-model:value="form.userProfileId"
               :options="options(profiles)"
           /></n-form-item>
-          <template v-if="session().viewer?.isAppAdmin"
-            ><n-checkbox v-model:checked="form.isAdminApp">{{
+          <div v-if="session().viewer?.isAppAdmin" class="user-admin-roles">
+            <n-checkbox v-model:checked="form.isAdminApp">{{
               $t("appAdmin")
             }}</n-checkbox
             ><n-checkbox v-model:checked="form.isAdminAcc">{{
               $t("accountAdmin")
-            }}</n-checkbox></template
-          >
-          <n-form-item :label="$t('signIn')"
+            }}</n-checkbox>
+          </div>
+          <n-form-item :label="$t('allowSignIn')" class="user-sign-in"
             ><n-switch
-              :aria-label="$t('signIn')"
+              :aria-label="$t('allowSignIn')"
+              aria-describedby="user-sign-in-help"
               :value="!form.isDisabled"
-              @update:value="
-                form.isDisabled = !$event
-              " /></n-form-item></template
+              @update:value="form.isDisabled = !$event"
+            />
+            <p id="user-sign-in-help" class="muted user-sign-in-help">
+              {{ $t("allowSignInHelp") }}
+            </p></n-form-item
+          ></template
         ><template v-else-if="section === 'profiles'"
           ><div class="permission-grid">
             <n-checkbox
@@ -645,9 +685,13 @@ export default defineComponent({
         >
         <div class="modal-actions">
           <n-button @click="show = false">{{ $t("cancel") }}</n-button
-          ><n-button type="primary" attr-type="submit" :loading="busy">{{
-            $t("save")
-          }}</n-button>
+          ><n-button
+            type="primary"
+            attr-type="submit"
+            :loading="busy"
+            :disabled="missingUserAssignment"
+            >{{ $t("save") }}</n-button
+          >
         </div></n-form
       ><CustomFieldEditor
         v-if="show && editing && fieldModuleId"
@@ -669,5 +713,21 @@ export default defineComponent({
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
+}
+.user-admin-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.user-admin-roles + .user-sign-in {
+  margin-top: 24px;
+}
+.user-sign-in :deep(.n-form-item-blank) {
+  display: block;
+}
+.user-sign-in-help {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>
