@@ -285,10 +285,10 @@ jobs:
       group: nodepass-release-publication
       cancel-in-progress: false
     permissions:
-      contents: write
-      packages: write
-      id-token: write
-      attestations: write
+      contents: write # Attach verified assets and publish the immutable GitHub Release.
+      packages: write # Upload the preserved, tested image to this repository's GHCR package.
+      id-token: write # Obtain the short-lived OIDC identity for release attestations.
+      attestations: write # Store provenance, SBOM and asset attestations for this release.
     env:
       EXPECTED_DIGEST: ${{ needs.security.outputs.digest }}
       EXPECTED_CHECKSUMS_SHA256: ${{ needs.security.outputs.checksums }}
