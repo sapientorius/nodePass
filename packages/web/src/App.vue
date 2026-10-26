@@ -21,8 +21,9 @@ import { useAccounts } from "./stores/accounts";
 import { languageOptions } from "./i18n";
 import Icon from "./components/Icon.vue";
 import LoginView from "./views/LoginView.vue";
+import UpdateNotice from "./components/UpdateNotice.vue";
 import { uiLocales, dateLocales } from "./ui-locale";
-import type { Language } from "@nodepass/contracts";
+import type { Language, UpdateStatus } from "@nodepass/contracts";
 import { api, setCsrf } from "./api";
 export default defineComponent({
   components: {
@@ -40,12 +41,16 @@ export default defineComponent({
     NThing,
     Icon,
     LoginView,
+    UpdateNotice,
   },
   data: () => ({
     languageOptions,
     darkTheme,
     mobileOpen: false,
     notifications: [] as any[],
+    updates: null as UpdateStatus | null,
+    updateBusy: false,
+    pollRevision: 0,
     poller: undefined as ReturnType<typeof setInterval> | undefined,
   }),
   computed: {
@@ -125,6 +130,19 @@ export default defineComponent({
     },
   },
   watch: {
+    "sessionStore.viewer"(viewer, previous) {
+      if (
+        viewer?.id !== previous?.id ||
+        viewer?.phase !== previous?.phase ||
+        viewer?.isAppAdmin !== previous?.isAppAdmin
+      ) {
+        this.pollRevision++;
+        this.updates = null;
+        this.notifications = [];
+        this.updateBusy = false;
+        if (viewer?.phase === "ready") void this.poll();
+      }
+    },
     "sessionStore.viewer.view"(view: "list" | "cards" | undefined) {
       if (view) this.accountsStore.setView(view);
     },
@@ -153,6 +171,7 @@ export default defineComponent({
     this.poller = setInterval(() => void this.poll(), 60000);
   },
   beforeUnmount() {
+    this.pollRevision++;
     clearInterval(this.poller);
     window.removeEventListener("nodepass-expired", this.expired);
   },
@@ -162,13 +181,41 @@ export default defineComponent({
       this.sessionStore.viewer = null;
       this.accountsStore.clear();
       this.notifications = [];
+      this.updates = null;
+      this.pollRevision++;
     },
     async poll() {
       if (this.sessionStore.viewer?.phase !== "ready") return;
+      const revision = ++this.pollRevision;
+      const viewer = this.sessionStore.viewer;
       try {
-        this.notifications = await api("notifications");
+        const [notifications, updates] = await Promise.all([
+          api<any[]>("notifications"),
+          viewer.isAppAdmin
+            ? api<UpdateStatus>("updates")
+            : Promise.resolve(null),
+        ]);
+        if (
+          revision !== this.pollRevision ||
+          this.sessionStore.viewer?.id !== viewer.id
+        )
+          return;
+        this.notifications = notifications;
+        this.updates = updates;
       } catch (e) {
         this.sessionStore.fail(e);
+      }
+    },
+    async acknowledgeUpdate(id: string) {
+      if (this.updateBusy) return;
+      this.updateBusy = true;
+      try {
+        await api("updates/acknowledgement", "POST", { id });
+        await this.poll();
+      } catch (error) {
+        this.sessionStore.fail(error);
+      } finally {
+        this.updateBusy = false;
       }
     },
     async acknowledge(id: number) {
@@ -314,16 +361,37 @@ export default defineComponent({
                       ><template #trigger
                         ><n-badge
                           :value="
-                            notifications.filter((n) => !n.checked).length
+                            notifications.filter((n) => !n.checked).length +
+                            (updates?.available &&
+                            !updates.available.acknowledged
+                              ? 1
+                              : 0)
+                          "
+                          :dot="!!updates?.available?.critical"
+                          :type="
+                            updates?.available?.critical ? 'error' : 'default'
                           "
                           :max="99"
                           ><n-button
                             quaternary
                             circle
-                            :aria-label="$t('notifications')"
+                            :aria-label="
+                              updates?.available?.critical
+                                ? $t('notifications') +
+                                  ': ' +
+                                  $t('updatesCritical')
+                                : $t('notifications')
+                            "
                             ><Icon name="clock" /></n-button></n-badge
                       ></template>
                       <div class="notification-panel">
+                        <UpdateNotice
+                          v-if="updates"
+                          :status="updates"
+                          panel
+                          :busy="updateBusy"
+                          @acknowledge="acknowledgeUpdate"
+                        />
                         <strong>{{ $t("notifications") }}</strong
                         ><n-list
                           ><n-list-item
@@ -370,6 +438,12 @@ export default defineComponent({
                     /></n-button>
                   </div>
                 </header>
+                <UpdateNotice
+                  v-if="updates"
+                  :status="updates"
+                  :busy="updateBusy"
+                  @acknowledge="acknowledgeUpdate"
+                />
                 <main id="main-content"><router-view /></main>
                 <footer>
                   nodePass<template v-if="sessionStore.version">

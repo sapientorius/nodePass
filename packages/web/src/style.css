@@ -1162,9 +1162,42 @@ footer span {
   margin-top: 6px;
 }
 .notification-panel {
+  max-width: min(440px, calc(100vw - 32px));
   width: min(340px, 80vw);
-  max-height: 450px;
+  max-height: min(450px, 70vh);
   overflow: auto;
+}
+.notification-panel .muted {
+  color: inherit;
+}
+.update-notice {
+  margin: 12px 24px 0;
+  display: grid;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.update-notice:empty {
+  display: none;
+}
+.update-notice p {
+  margin: 0 0 8px;
+}
+.update-panel {
+  margin: 0 0 12px;
+}
+.update-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.update-actions a {
+  color: inherit;
+  text-decoration: underline;
+}
+.update-delivery-warning {
+  color: var(--text);
+  font-weight: 600;
 }
 .notification-panel .n-list-item {
   font-size: 12px;

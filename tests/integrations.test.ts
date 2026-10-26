@@ -5,6 +5,7 @@ import { harness } from "./harness.js";
 import { Integrations } from "../packages/server/src/services/integrations.js";
 import { deliverBatch, jobs } from "../packages/server/src/services/jobs.js";
 import { audit, getSetting } from "../packages/server/src/db.js";
+import type { Updates } from "../packages/server/src/services/updates.js";
 const mocks = vi.hoisted(() => ({
   sendMail: vi.fn(),
   close: vi.fn(),
@@ -23,6 +24,10 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
       mocks.createTransport.mockReturnValue({
         sendMail: mocks.sendMail,
         close: mocks.close,
+      });
+      mocks.sendMail.mockResolvedValue({
+        accepted: ["synthetic@example.test"],
+        rejected: [],
       });
     });
     afterAll(async () => {
@@ -102,6 +107,37 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         socket.close();
       }
     });
+    it("delivers explicit update recipients independently of the audit list and refuses rejected delivery", async () => {
+      await integrations.save("smtp", { enabled: false }, 1);
+      expect(
+        await integrations.mailTo(
+          "Update",
+          "Synthetic notice",
+          "admin@example.test",
+        ),
+      ).toBe(false);
+      await integrations.save("smtp", { enabled: true, recipients: "" }, 1);
+      expect(
+        await integrations.mailTo(
+          "Update",
+          "Synthetic notice",
+          "admin@example.test",
+        ),
+      ).toBe(true);
+      expect(mocks.sendMail).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          to: ["admin@example.test"],
+          text: "Synthetic notice",
+        }),
+      );
+      mocks.sendMail.mockResolvedValueOnce({
+        accepted: [],
+        rejected: ["admin@example.test"],
+      });
+      await expect(
+        integrations.mailTo("Update", "Synthetic notice", "admin@example.test"),
+      ).rejects.toThrow("not accepted");
+    });
     it("limits wiki requests to HTTPS XML-RPC and rejects redirects, entities, malformed or oversized responses", async () => {
       await integrations.save(
         "wiki",
@@ -150,6 +186,46 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         await expect(integrations.wiki("page", "test")).rejects.toThrow();
       }
       vi.unstubAllGlobals();
+    });
+    it("keeps update checks and update mail independent of failed audit delivery and stops all workers", async () => {
+      await audit(r.db, 1, "security.test");
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const failedAudit = vi
+        .spyOn(integrations, "syslog")
+        .mockRejectedValue(
+          new Error("Synthetic unavailable audit destination"),
+        );
+      let callback!: () => void;
+      const interval = vi.spyOn(global, "setInterval").mockImplementation(((
+        fn: () => void,
+      ) => {
+        callback = fn;
+        return { unref() {} };
+      }) as any);
+      const clear = vi
+        .spyOn(global, "clearInterval")
+        .mockImplementation(() => {});
+      const worker = {
+        checkDue: vi.fn().mockRejectedValue(new Error("offline")),
+        deliver: vi.fn().mockRejectedValue(new Error("offline")),
+        stop: vi.fn().mockResolvedValue(undefined),
+      };
+      try {
+        const stop = jobs(r.db, integrations, worker as unknown as Updates);
+        callback();
+        callback();
+        await stop();
+        callback();
+        expect(worker.checkDue).toHaveBeenCalledTimes(3);
+        expect(worker.deliver).toHaveBeenCalledTimes(2);
+        expect(worker.stop).toHaveBeenCalledOnce();
+        expect(errors).toHaveBeenCalled();
+      } finally {
+        interval.mockRestore();
+        clear.mockRestore();
+        failedAudit.mockRestore();
+        errors.mockRestore();
+      }
     });
     it("retries delivery without losing its cursor and cleans up expired session and challenge data", async () => {
       const last = await r.db("nodepass_audit").max({ n: "id" }).first();

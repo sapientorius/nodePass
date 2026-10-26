@@ -40,6 +40,14 @@ Use the intended next version, update its section in [CHANGELOG](../CHANGELOG.md
 
 Review migration and restore behavior, supported databases, compatibility changes and upgrade instructions. Merge only after the full PR gate passes. The actual merged commit receives its own main-branch verification. Run representative migration/restore and real proxy/integration acceptance with a separate copy; CI's synthetic tests cannot certify an operator's environment.
 
+### Security update metadata
+
+Review `release-security.json` in every release PR. Its `nodepass-security-1` catalogue is cumulative: retain earlier entries, including fixes from skipped releases. Record each publicly disclosed correction under a stable identifier (for example, its GHSA identifier) with one or more sorted, non-overlapping `affected` intervals. Each interval has an inclusive `introduced` version and exclusive `fixed` version, using nodePass's stable/RC version syntax. RCs participate in normal semantic ordering. Every `fixed` version must be at or below the version being released. An empty `fixes` array explicitly records no published corrections; it is not a security certification. Do not place embargoed vulnerability details in this public file.
+
+For example, a synthetic entry `{ "id": "NP-EXAMPLE-1", "affected": [{ "introduced": "0.1.0-rc.1", "fixed": "0.2.0" }] }` marks installations before `0.2.0` from that first RC as affected. Any later release carrying that cumulative entry still triggers a critical notice for those installations. Do not add this example as an actual advisory.
+
+`check:release` validates the catalogue. Release preparation embeds it as `security` in `release-manifest.json`, covered by the existing checksums and release attestations. Publication verification requires exact equality with the reviewed source. The application reads only complete immutable releases, verifies the API-provided manifest hash and identity, and never infers severity from release-note wording. Any recorded correction affecting the installed version is classified as critical. See [update notification operation](OPERATIONS.md#update-notifications) for cadence, failure states and SMTP delivery.
+
 Fetch main, select the exact reviewed commit and create an annotated release tag. Replace COMMIT and VERSION explicitly:
 
 ```sh

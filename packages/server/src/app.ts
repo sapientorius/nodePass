@@ -40,19 +40,26 @@ import {
 import {
   languages,
   defaultPolicy,
+  version,
   type SecurityPolicy,
 } from "@nodepass/contracts";
 import { jsonRpc, actions } from "./compat/jsonrpc.js";
 import { Transfer, parseImport } from "./services/transfer.js";
 import { Integrations } from "./services/integrations.js";
 import { jobs } from "./services/jobs.js";
+import { Updates } from "./services/updates.js";
+import { UpdateSource } from "./services/update-source.js";
 import { proxyMatcher } from "./security/proxy.js";
 import { Tokens, Presets } from "./services/management.js";
 import { openApi } from "./openapi.js";
 import { token } from "./security/crypto.js";
 import { mapData } from "./compat/data.js";
 
-export async function createApp(config: Config, providedDb?: Database) {
+export async function createApp(
+  config: Config,
+  providedDb?: Database,
+  options: { updateFetch?: typeof fetch } = {},
+) {
   const db = providedDb ?? database(config),
     vault = new Vault(db, config.deploymentKey),
     auth = new Auth(db, config, vault),
@@ -102,10 +109,20 @@ export async function createApp(config: Config, providedDb?: Database) {
     await vault.load();
   }
   let status = await migration.status();
+  let updates = new Updates(
+    db,
+    integrations,
+    new UpdateSource(options.updateFetch),
+  );
   let stopJobs: () => void | Promise<void> = () => {};
   const startJobs = async () => {
     await stopJobs();
-    if (status.ready) stopJobs = jobs(db, integrations);
+    updates = new Updates(
+      db,
+      integrations,
+      new UpdateSource(options.updateFetch),
+    );
+    if (status.ready) stopJobs = jobs(db, integrations, updates);
   };
   await startJobs();
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
@@ -371,7 +388,7 @@ export async function createApp(config: Config, providedDb?: Database) {
   router.get("/api/v1/status", async (ctx) => {
     ctx.body = {
       name: "nodePass",
-      version: "0.1.0",
+      version,
       setupRequired: !status.ready,
       legacy: status.legacy,
       sso:
@@ -854,6 +871,20 @@ export async function createApp(config: Config, providedDb?: Database) {
     }
     ctx.body = await db("nodepass_audit").orderBy("id", "desc").limit(200);
   });
+  router.get("/api/v1/updates", async (ctx) => {
+    const id = await admin(ctx);
+    ctx.body = await updates.status(id.user.id);
+  });
+  router.post("/api/v1/updates/acknowledgement", async (ctx) => {
+    const id = await admin(ctx),
+      data = body(ctx);
+    exact(data, ["id"]);
+    const notificationId = text(data, "id", 64);
+    if (!/^[a-f0-9]{64}$/.test(notificationId))
+      throw new BadRequest("Invalid update notification");
+    await updates.acknowledge(id.user.id, notificationId);
+    ctx.status = 204;
+  });
   router.get("/api/v1/notifications", async (ctx) => {
     const id = (await params(ctx)).identity!;
     ctx.body = await db("Notification")
@@ -1047,6 +1078,9 @@ export async function createApp(config: Config, providedDb?: Database) {
     accounts,
     resources,
     migration,
+    get updates() {
+      return updates;
+    },
     close: async () => {
       await stopJobs();
       await Promise.allSettled([...setupTasks]);

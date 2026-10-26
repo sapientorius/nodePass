@@ -8,6 +8,7 @@ Versions before 1.0 may include breaking changes in minor releases. Patch releas
 
 - Initial nodePass release candidate: FeathersJS API, Vue interface, passkeys, integrated TOTP, permission-controlled password management and a one-time sysPass migration path.
 - GitHub verification gates, version checks, digest-pinned release deployment bundles, container SBOMs and release provenance.
+- Hourly server-side release checks, cumulative security-fix metadata, administrator update notices and deduplicated SMTP notifications.
 
 ### Compatibility and upgrade notes
 

@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
+import { validateReleaseSecurity } from "../packages/contracts/src/updates.ts";
 import {
   checkVersions,
   releaseIdentity,
@@ -85,6 +86,10 @@ export async function prepareRelease(root, identity, context) {
   const manifest = {
     format: "nodepass-release-1",
     version: identity.version,
+    security: validateReleaseSecurity(
+      JSON.parse(await readFile(join(root, "release-security.json"), "utf8")),
+      identity.version,
+    ),
     tag: identity.tag,
     source: { repository, commit: identity.commit, ref: context.ref },
     notesSha256: await sha256(join(directory, "release-notes.md")),

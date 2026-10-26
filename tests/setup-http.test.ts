@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../packages/server/src/config.js";
 import { createApp } from "../packages/server/src/app.js";
+import { offlineUpdates } from "./offline-updates.js";
 import { database, type Row } from "../packages/server/src/db.js";
 import { isolatedDatabase } from "./database.js";
 import { legacyReference, seedLegacy } from "./legacy.js";
@@ -96,16 +97,20 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     drop = isolated.drop;
     directory = await mkdtemp(join(tmpdir(), "nodepass-http-"));
     setupToken = isolated.config.setupToken;
-    runtime = await createApp({
-      ...isolated.config,
-      dataDir: directory,
-      production: true,
-      publicUrl: "https://vault.example.test",
-      rpId: "vault.example.test",
-      trustProxy: true,
-      trustedProxies: ["127.0.0.1/32"],
-      legacy: { passwordSalt: legacyReference.publicLink.salt },
-    });
+    runtime = await createApp(
+      {
+        ...isolated.config,
+        dataDir: directory,
+        production: true,
+        publicUrl: "https://vault.example.test",
+        rpId: "vault.example.test",
+        trustProxy: true,
+        trustedProxies: ["127.0.0.1/32"],
+        legacy: { passwordSalt: legacyReference.publicLink.salt },
+      },
+      undefined,
+      { updateFetch: offlineUpdates },
+    );
     server = await runtime.app.listen(0, "127.0.0.1");
     if (!server.listening) await once(server, "listening");
     const address = server.address();

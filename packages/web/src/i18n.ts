@@ -1,4 +1,5 @@
 import { createI18n } from "vue-i18n";
+import { updateMessages } from "./update-translations";
 import type { Language } from "@nodepass/contracts";
 import { extraMessages } from "./translations";
 import { presetMessages } from "./preset-translations";
@@ -94,6 +95,7 @@ export const messages = Object.fromEntries(
         ...setupCompatibilityMessages[locale],
         ...setupMigrationMessages[locale],
         ...shareMessages[locale],
+        ...updateMessages[locale],
         ...userGroupMessages[locale],
         backToLogin: backToLoginLabels[locale as Language],
       },

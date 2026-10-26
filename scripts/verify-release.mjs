@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
+import { validateReleaseSecurity } from "../packages/contracts/src/updates.ts";
 import {
   checkVersions,
   releaseIdentity,
@@ -48,6 +49,18 @@ if (
 const manifest = JSON.parse(
   await readFile(`${directory}/release-manifest.json`, "utf8"),
 );
+if (
+  JSON.stringify(validateReleaseSecurity(manifest.security, version)) !==
+  JSON.stringify(
+    validateReleaseSecurity(
+      JSON.parse(await readFile("release-security.json", "utf8")),
+      version,
+    ),
+  )
+)
+  throw new Error(
+    "Release security catalogue differs from the reviewed source",
+  );
 if (
   manifest.format !== "nodepass-release-1" ||
   manifest.version !== version ||

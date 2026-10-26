@@ -22,6 +22,20 @@ Reverse-proxy SSO additionally requires a random shared signing secret. The prox
 
 SMTP requires TLS with certificate validation. Syslog UDP sends sanitized events to the configured receiver; retries can produce duplicates and the local audit remains authoritative. Wiki calls use only the configured HTTPS endpoint, reject redirects and bound responses. Account URLs are never fetched for previews. Verify real network/certificate/permission behavior before release.
 
+## Update notifications
+
+After setup, the server checks the official `sapientorius/nodePass` GitHub Releases immediately, then hourly. The next check is persisted before network I/O, so restarts do not cause repeated requests. Stable installations consider stable releases; release candidates also consider newer RCs. Version order determines the newest eligible release. This does not install software or replace the release-artifact verification procedure.
+
+Allow outbound HTTPS to `api.github.com` and `release-assets.githubusercontent.com`. Requests use no GitHub token, installation identifier, installed version, hostname or vault data. GitHub necessarily sees the server's source IP. Checks use conditional requests, strict request/body/page limits and the API's polling/rate-limit delays. No browser resources are loaded from GitHub. GitHub/TLS is the metadata trust anchor; hashes obtained from GitHub do not provide an independent signature.
+
+Only fully authenticated application administrators can read update status or acknowledge a notice. A critical banner means a published correction affects the installed version, even if intervening releases were skipped. Acknowledgement hides that administrator's banner; the critical notification and red indicator remain until an upgrade resolves it. A newer target version creates a new notice. The notification panel shows the last successful check, missing administrator email addresses and mail delivery failures.
+
+Unreachable sources, mutable releases, missing/invalid security metadata or hash mismatches leave the check incomplete. The last validated warning remains visible. A successful check older than two hours is marked stale. An empty security catalogue means no published fixes have been recorded, not that the software has no vulnerabilities. Source outages do not block login or vault operations.
+
+With SMTP enabled, each distinct valid email address of an active application administrator receives one plain-text English notification per target version. The audit integration's recipient list is independent. New administrators, changed addresses and later SMTP activation receive the still-applicable notice. Failed deliveries retry with backoff from one minute to one hour; successful deliveries survive restarts without daily reminders. SMTP remains subject to verified TLS and explicit recipient acceptance. A crash or connection loss after SMTP acceptance but before saving delivery can cause a duplicate: SMTP and the local database cannot provide an atomic exactly-once transaction. Invalid or missing administrator addresses do not prevent other recipients from receiving mail.
+
+State and acknowledgements use the existing `nodepass_settings` sidecar table and are included in backups. The update worker, mail retries and audit delivery have independent failure handling. As with other background work, only one application process is supported.
+
 ## Backups and restore
 
 Create/download `.npb` backups in administration or use the CLI `backup` command. Backups contain a consistent DB snapshot, configuration, manifest, record counts and SHA-256 checksums in a compressed AES-GCM-authenticated stream. Store copies outside the app volume, separate from their keys, with a retention policy and regular restore rehearsals. `.partial` files are not successful backups.

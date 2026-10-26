@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { loadConfig } from "../packages/server/src/config.js";
 import { createApp } from "../packages/server/src/app.js";
+import { offlineUpdates } from "./offline-updates.js";
 import { isolatedDatabase } from "./database.js";
 if (existsSync(".cache/integration.env"))
   process.loadEnvFile(".cache/integration.env");
@@ -29,7 +30,9 @@ await writeFile(
   }),
   { mode: 0o600 },
 );
-const runtime = await createApp(config),
+const runtime = await createApp(config, undefined, {
+    updateFetch: offlineUpdates,
+  }),
   server = await runtime.app.listen(port, host);
 if (!server.listening) await once(server, "listening");
 console.log("Isolated browser test server ready");
