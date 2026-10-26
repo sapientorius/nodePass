@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent } from "vue";
 import {
+  useMessage,
   NCard,
   NSelect,
   NForm,
@@ -60,6 +61,9 @@ const definitions: Record<
 };
 import NInputNumber from "../components/NumberField.vue";
 export default defineComponent({
+  setup() {
+    return { message: useMessage() };
+  },
   components: {
     NCard,
     NSelect,
@@ -133,6 +137,7 @@ export default defineComponent({
       return rows.map((r) => ({ label: r.name, value: String(r.id) }));
     },
     async save() {
+      this.saved = false;
       await this.run(async () => {
         const data: any = {};
         for (const field of this.fields) {
@@ -140,12 +145,14 @@ export default defineComponent({
           data[field.key] = this.form[field.key];
         }
         await api(`integrations/${this.provider}`, "PATCH", data);
+        this.message.success(this.$t("saved"), { duration: 3000 });
         for (const field of this.fields.filter((f) => f.type === "secret"))
           this.form[field.key] = "";
         this.saved = true;
       });
     },
     async test() {
+      this.saved = false;
       await this.run(async () => {
         await api("integrations/smtp/test", "POST", {});
         this.saved = true;

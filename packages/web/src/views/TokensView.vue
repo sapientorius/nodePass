@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent } from "vue";
 import {
+  useMessage,
   NButton,
   NForm,
   NFormItem,
@@ -19,6 +20,9 @@ import NCard from "../components/PanelCard.vue";
 import AccessibleModal from "../components/AccessibleModal.vue";
 import CustomFieldEditor from "../components/CustomFieldEditor.vue";
 export default defineComponent({
+  setup() {
+    return { message: useMessage() };
+  },
   components: {
     AccessibleModal,
     CustomFieldEditor,
@@ -85,6 +89,7 @@ export default defineComponent({
         });
         this.created = data.token;
         this.password = "";
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.rows = await api("tokens");
       });
     },

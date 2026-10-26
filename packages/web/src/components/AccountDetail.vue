@@ -204,6 +204,7 @@ export default defineComponent({
           name: file.name,
           content: btoa(binary),
         });
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.files = await this.call(`accounts/${this.account!.id}/files`);
       });
     },
@@ -216,6 +217,7 @@ export default defineComponent({
           views: this.views,
           seconds: this.validityMinutes * 60,
         });
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.setLinks(await this.call(`accounts/${this.account!.id}/links`));
       });
     },
@@ -279,6 +281,7 @@ export default defineComponent({
             }),
           ),
         });
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.$emit("changed");
       });
     },
@@ -289,6 +292,7 @@ export default defineComponent({
           "POST",
           { version: this.account!.version },
         );
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.$emit("close");
         this.$emit("changed");
       });

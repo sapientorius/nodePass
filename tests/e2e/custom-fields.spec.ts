@@ -159,6 +159,17 @@ async function fixture(page: Page, permissions: Record<string, boolean> = {}) {
         permissions: {},
       },
       "auth/policy": { minLength: 15, minScore: 3 },
+      updates: {
+        installedVersion: "0.1.0-rc.1",
+        channel: "rc",
+        lastAttemptAt: Date.now(),
+        lastSuccessAt: Date.now(),
+        nextCheckAt: Date.now() + 3600000,
+        error: null,
+        stale: false,
+        available: null,
+        mail: { enabled: false, missingAddresses: 0, pending: 0, failed: 0 },
+      },
       accounts: {
         data: [account(1), account(2)],
         total: 2,

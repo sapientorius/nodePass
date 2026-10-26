@@ -2,16 +2,18 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  isReleaseVersion,
+  validateReleaseSecurity,
+} from "../packages/contracts/src/updates.ts";
 
 export const repository = "sapientorius/nodePass";
 export const image = "ghcr.io/sapientorius/nodepass";
 export const workspaces = ["contracts", "server", "web"];
-const versionPattern =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-rc\.([1-9]\d*))?$/;
 const digestPattern = /^sha256:[a-f0-9]{64}$/;
 
 export function releaseIdentity(version, commit, tag = `nodepass-v${version}`) {
-  if (!versionPattern.test(version)) throw new Error("Invalid release version");
+  if (!isReleaseVersion(version)) throw new Error("Invalid release version");
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("Invalid source commit");
   if (tag !== `nodepass-v${version}`)
     throw new Error("Release tag/version mismatch");
@@ -147,6 +149,7 @@ export async function checkVersions(root) {
   const changelog = await readFile(join(root, "CHANGELOG.md"), "utf8");
   if (!changelog.includes(`## [${pkg.version}]`))
     throw new Error("Missing version in changelog");
+  validateReleaseSecurity(await json("release-security.json"), pkg.version);
   return pkg.version;
 }
 

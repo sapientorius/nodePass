@@ -8,7 +8,10 @@ export interface ApiFailure {
   details?: Record<string, unknown>;
 }
 export class ApiError extends Error {
-  constructor(readonly failure: ApiFailure) {
+  constructor(
+    readonly failure: ApiFailure,
+    readonly status = 0,
+  ) {
     super(failure.message);
   }
 }
@@ -42,7 +45,7 @@ async function request(
     } catch {
       /* Do not expose server error bodies. */
     }
-    throw new ApiError(failure);
+    throw new ApiError(failure, response.status);
   }
   return response;
 }

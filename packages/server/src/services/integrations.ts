@@ -176,6 +176,33 @@ export class Integrations {
   async mail(subject: string, message: string): Promise<void> {
     const c = await this.configuration("smtp");
     if (!c.enabled) return;
+    await this.sendMail(
+      c,
+      subject,
+      message,
+      String(c.recipients)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  }
+  /** Explicit single-recipient delivery, independent of the audit recipient list. */
+  async mailTo(
+    subject: string,
+    message: string,
+    recipient: string,
+  ): Promise<boolean> {
+    const c = await this.configuration("smtp");
+    if (!c.enabled) return false;
+    await this.sendMail(c, subject, message, [recipient]);
+    return true;
+  }
+  private async sendMail(
+    c: Row,
+    subject: string,
+    message: string,
+    recipients: string[],
+  ): Promise<void> {
     const transport = nodemailer.createTransport({
       host: String(c.host),
       port: Number(c.port),
@@ -192,17 +219,16 @@ export class Integrations {
       disableUrlAccess: true,
     });
     try {
-      await transport.sendMail({
+      const result = await transport.sendMail({
         from: String(c.from),
-        to: String(c.recipients)
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        to: recipients,
         subject: subject.replace(/[\r\n]/g, " ").slice(0, 150),
         text: message,
         disableFileAccess: true,
         disableUrlAccess: true,
       });
+      if (result.rejected?.length || !result.accepted?.length)
+        throw new Error("Mail recipient was not accepted");
     } finally {
       transport.close();
     }

@@ -1,5 +1,6 @@
 import { getSetting, putSetting, type Database } from "../db.js";
 import type { Integrations } from "./integrations.js";
+import type { Updates } from "./updates.js";
 export async function deliverBatch(
   db: Database,
   integrations: Pick<Integrations, "syslog" | "mail">,
@@ -37,10 +38,24 @@ export async function deliverBatch(
 export function jobs(
   db: Database,
   integrations: Integrations,
+  updates?: Updates,
 ): () => Promise<void> {
   let active: Promise<void> | undefined,
     stopped = false;
   const tick = () => {
+    if (stopped) return;
+    if (updates) {
+      void updates
+        .checkDue()
+        .catch(() =>
+          console.error(JSON.stringify({ event: "updates.background.failed" })),
+        );
+      void updates
+        .deliver()
+        .catch(() =>
+          console.error(JSON.stringify({ event: "updates.delivery.failed" })),
+        );
+    }
     if (active || stopped) return;
     active = deliverBatch(db, integrations)
       .catch(() => {
@@ -52,9 +67,15 @@ export function jobs(
   };
   const timer = setInterval(tick, 30000);
   timer.unref();
+  if (updates)
+    void updates
+      .checkDue()
+      .catch(() =>
+        console.error(JSON.stringify({ event: "updates.background.failed" })),
+      );
   return async () => {
     stopped = true;
     clearInterval(timer);
-    await active;
+    await Promise.all([active, updates?.stop()]);
   };
 }

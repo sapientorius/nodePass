@@ -46,6 +46,7 @@ describe("release source and version boundaries", () => {
     "1.0.0-rc.01",
     "1.0.0+build",
     "1.0.0\nlatest=x",
+    "1.0.0\n",
     "$(command)",
     "1.0.0-beta.1",
   ])("rejects ambiguous or injectable version %s", (version) => {
@@ -65,6 +66,7 @@ describe("release source and version boundaries", () => {
       "README.md",
       "SECURITY.md",
       "CHANGELOG.md",
+      "release-security.json",
       "packages/contracts/package.json",
       "packages/server/package.json",
       "packages/web/package.json",
@@ -91,6 +93,22 @@ describe("release source and version boundaries", () => {
       "# Changelog\n\n## [0.2.0-rc.2]\n\nSynthetic release.\n",
     );
     expect(await checkVersions(directory)).toBe("0.2.0-rc.2");
+    const securityPath = join(directory, "release-security.json");
+    const security = await readFile(securityPath, "utf8");
+    await writeFile(
+      securityPath,
+      JSON.stringify({
+        format: "nodepass-security-1",
+        fixes: [
+          {
+            id: "NP-TEST",
+            affected: [{ introduced: "0.1.0", fixed: "9.0.0" }],
+          },
+        ],
+      }),
+    );
+    await expect(checkVersions(directory)).rejects.toThrow("interval");
+    await writeFile(securityPath, security);
     const after = JSON.parse(
       await readFile(join(directory, "package-lock.json"), "utf8"),
     );

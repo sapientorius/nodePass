@@ -3,9 +3,14 @@ import { existsSync } from "node:fs";
 import { once } from "node:events";
 import { loadConfig } from "../packages/server/src/config.js";
 import { createApp } from "../packages/server/src/app.js";
+import { offlineUpdates } from "./offline-updates.js";
 import * as OTPAuth from "otpauth";
 import { isolatedDatabase } from "./database.js";
 import { encryptDefuse } from "../packages/server/src/compat/defuse.js";
+import { putSetting } from "../packages/server/src/db.js";
+import { UpdateSource } from "../packages/server/src/services/update-source.js";
+import { updateFixture } from "./update-fixtures.js";
+import { refreshReleaseHistory } from "../packages/server/src/services/release-history.js";
 // This suite is mandatory in CI. Local opt-in avoids accidentally targeting a production DB.
 const enabled = process.env.NODEPASS_INTEGRATION === "1";
 describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
@@ -46,7 +51,9 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
       process.loadEnvFile(".cache/integration.env");
     const isolated = await isolatedDatabase(loadConfig());
     drop = isolated.drop;
-    runtime = await createApp(isolated.config);
+    runtime = await createApp(isolated.config, undefined, {
+      updateFetch: offlineUpdates,
+    });
     const [tables] = await runtime.db.raw("SHOW TABLES");
     if (tables.length) throw new Error("Integration database must be empty");
     server = await runtime.app.listen(0, "127.0.0.1");
@@ -972,6 +979,149 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
       cookie = rootCookie;
       csrf = rootCsrf;
     }
+  });
+  it("restricts update status and acknowledgements to complete app-admin sessions with CSRF and personal state", async () => {
+    await runtime.updates.stop();
+    const f = updateFixture();
+    const source = new UpdateSource(async (url) =>
+      String(url).includes("/assets/")
+        ? new Response(f.data)
+        : new Response(JSON.stringify([f.row])),
+    );
+    const checked = await source.check(
+      "0.1.0-rc.1",
+      null,
+      {},
+      new AbortController().signal,
+    );
+    await putSetting(
+      runtime.db,
+      "updates/history",
+      await refreshReleaseHistory(
+        source,
+        "0.1.0-rc.1",
+        checked.cache,
+        null,
+        checked.latest,
+        10 - checked.manifestFetches,
+        new AbortController().signal,
+        Date.now,
+      ),
+    );
+    await putSetting(runtime.db, "updates/state", {
+      lastAttemptAt: Date.now(),
+      lastSuccessAt: Date.now(),
+      nextCheckAt: Date.now() + 3600000,
+      error: null,
+      latest: checked.latest,
+      cache: checked.cache,
+    });
+    const status = await request("/api/v1/updates");
+    expect(status.response.status).toBe(200);
+    const history = await request("/api/v1/updates/releases");
+    expect(history.response.status).toBe(200);
+    expect(history.value).toMatchObject({
+      installedVersion: "0.1.0-rc.1",
+      latestVersion: "0.3.0",
+      releases: [
+        { version: "0.3.0", notesStatus: "verified", notes: f.row.body },
+      ],
+    });
+    expect(
+      (
+        await request("/api/v1/updates/releases", "GET", undefined, {
+          cookie: "",
+        })
+      ).response.status,
+    ).toBe(401);
+    expect(status.value.available).toMatchObject({
+      critical: true,
+      acknowledged: false,
+    });
+    const data = { id: status.value.available.id };
+    expect(
+      (await request("/api/v1/updates", "GET", undefined, { cookie: "" }))
+        .response.status,
+    ).toBe(401);
+    expect(
+      (
+        await request("/api/v1/updates/acknowledgement", "POST", data, {
+          "x-csrf-token": "wrong",
+        })
+      ).response.status,
+    ).toBe(403);
+    expect(
+      (
+        await request("/api/v1/updates/acknowledgement", "POST", data, {
+          origin: "https://evil.test",
+        })
+      ).response.status,
+    ).toBe(403);
+    expect(
+      (
+        await request("/api/v1/updates/acknowledgement", "POST", {
+          id: "invalid",
+        })
+      ).response.status,
+    ).toBe(400);
+    expect(
+      (
+        await request("/api/v1/updates/acknowledgement", "POST", {
+          id: "0".repeat(64),
+        })
+      ).response.status,
+    ).toBe(409);
+    const session = await runtime
+      .db("nodepass_sessions")
+      .where({ csrf })
+      .first();
+    try {
+      await runtime
+        .db("nodepass_sessions")
+        .where({ id: session.id })
+        .update({ complete: 0 });
+      expect((await request("/api/v1/updates")).response.status).toBe(403);
+      expect((await request("/api/v1/updates/releases")).response.status).toBe(
+        403,
+      );
+      await runtime
+        .db("nodepass_sessions")
+        .where({ id: session.id })
+        .update({ complete: 1 });
+      for (const isAdminAcc of [0, 1]) {
+        await runtime
+          .db("User")
+          .where({ id: 1 })
+          .update({ isAdminApp: 0, isAdminAcc });
+        expect((await request("/api/v1/updates")).response.status).toBe(403);
+        expect(
+          (await request("/api/v1/updates/releases")).response.status,
+        ).toBe(403);
+        expect(
+          (await request("/api/v1/updates/acknowledgement", "POST", data))
+            .response.status,
+        ).toBe(403);
+      }
+    } finally {
+      await runtime
+        .db("User")
+        .where({ id: 1 })
+        .update({ isAdminApp: 1, isAdminAcc: 0 });
+      await runtime
+        .db("nodepass_sessions")
+        .where({ id: session.id })
+        .update({ complete: 1 });
+    }
+    expect(
+      (await request("/api/v1/updates/acknowledgement", "POST", data)).response
+        .status,
+    ).toBe(204);
+    expect(
+      (await request("/api/v1/updates")).value.available.acknowledged,
+    ).toBe(true);
+    expect(await runtime.updates.status(999)).toMatchObject({
+      available: { acknowledged: false },
+    });
   });
   it("changes passwords through a fresh confirmation and revokes every old session", async () => {
     expect(

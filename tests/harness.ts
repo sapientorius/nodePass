@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../packages/server/src/config.js";
 import { createApp } from "../packages/server/src/app.js";
+import { offlineUpdates } from "./offline-updates.js";
 import { isolatedDatabase } from "./database.js";
 import type { ServiceParams } from "../packages/server/src/services/accounts.js";
 export const testPassword = "saffron lighthouse telescope violet 912!";
@@ -10,7 +11,9 @@ export async function harness() {
   const isolated = await isolatedDatabase(loadConfig()),
     directory = await mkdtemp(join(tmpdir(), "nodepass-test-")),
     config = { ...isolated.config, dataDir: directory };
-  const runtime = await createApp(config);
+  const runtime = await createApp(config, undefined, {
+    updateFetch: offlineUpdates,
+  });
   await runtime.migration.fresh({
     login: "admin",
     name: "Test admin",

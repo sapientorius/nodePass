@@ -6,19 +6,19 @@ The reference is sysPass **3.2.11**. This comparison describes implemented behav
 
 ## Inherited capabilities
 
-| Capability                 | nodePass behavior                                                                                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accounts and organization  | Search, categories, clients, tags, favorites, linked accounts and card/table views with shared filter state                                                |
-| Privacy and authorization  | Private accounts and private group accounts; user/group grants and profiles; separate metadata/password/file/history/sharing permissions                   |
-| Password workflows         | Local password generator, expiry, encrypted history and version-checked restoration of metadata and passwords                                              |
-| Custom fields              | Typed values for accounts, categories, clients, users, groups, profiles and API tokens, including legacy module aliases; secret values excluded from lists |
-| Attachments                | Encrypted attachment storage and forced downloads; legacy BLOBs removed only after verified takeover                                                       |
-| Administration             | Users, groups, profiles, presets and API tokens; protection of the last application administrator and session revocation after relevant changes            |
-| Public links               | Existing addresses/hashes retained, expiry and atomic retrieval limits, snapshots and revocation                                                           |
-| Data exchange              | Preview and atomic import for CSV, KeePass XML and encrypted sysPass XML; explicit plaintext export                                                        |
-| Legacy API                 | Action-bound JSON-RPC tokens and token passwords; the same permissions as REST/UI                                                                          |
-| Activity and notifications | Sanitized audit events, separately readable legacy events, bounded notification polling and personal read state                                            |
-| Integrations               | LDAP/AD, reverse-proxy sign-in, SMTP, syslog and wiki integration, with explicitly configured destinations                                                 |
+| Capability                 | nodePass behavior                                                                                                                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accounts and organization  | Search, categories, clients, tags, favorites, linked accounts and card/table views with shared filter state                                                                                          |
+| Privacy and authorization  | Private accounts and private group accounts; user/group grants and profiles; separate metadata/password/file/history/sharing permissions                                                             |
+| Password workflows         | Local password generator, expiry, encrypted history and version-checked restoration of metadata and passwords                                                                                        |
+| Custom fields              | Typed values for accounts, categories, clients, users, groups, profiles and API tokens, including legacy module aliases; secret values excluded from lists                                           |
+| Attachments                | Encrypted attachment storage and forced downloads; legacy BLOBs removed only after verified takeover                                                                                                 |
+| Administration             | Users, groups, profiles, presets and API tokens; protection of the last application administrator and session revocation after relevant changes                                                      |
+| Public links               | Existing addresses/hashes retained, expiry and atomic retrieval limits, snapshots and revocation                                                                                                     |
+| Data exchange              | Preview and atomic import for CSV, KeePass XML and encrypted sysPass XML; explicit plaintext export                                                                                                  |
+| Legacy API                 | Action-bound JSON-RPC tokens and token passwords; the same permissions as REST/UI                                                                                                                    |
+| Activity and notifications | Sanitized audit events, separately readable legacy events, bounded notification polling and personal read state; hourly administrator update checks and critical security notices with SMTP delivery |
+| Integrations               | LDAP/AD, reverse-proxy sign-in, SMTP, syslog and wiki integration, with explicitly configured destinations                                                                                           |
 
 Card/list selection and authenticator-based TOTP existed in sysPass. They are preserved or modernized rather than presented as inventions of nodePass.
 
