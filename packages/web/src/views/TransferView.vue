@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent } from "vue";
 import {
+  useMessage,
   NCard,
   NButton,
   NForm,
@@ -18,6 +19,9 @@ import { api, download } from "../api";
 import { useSession } from "../stores/session";
 import { tabProps } from "../tab-props";
 export default defineComponent({
+  setup() {
+    return { message: useMessage() };
+  },
   components: {
     NCard,
     NButton,
@@ -46,7 +50,7 @@ export default defineComponent({
     categoryId: null as number | null,
     clientId: null as number | null,
     userGroupId: null as number | null,
-    result: 0,
+    result: null as number | null,
   }),
   mounted() {
     void this.run(async () => {
@@ -89,8 +93,10 @@ export default defineComponent({
       }
       this.source = await file.text();
       this.preview = null;
+      this.result = null;
     },
     async inspect() {
+      this.result = null;
       await this.run(async () => {
         this.preview = await api("import/preview", "POST", {
           format: this.format,
@@ -102,6 +108,7 @@ export default defineComponent({
       });
     },
     async commit() {
+      this.result = null;
       await this.run(async () => {
         this.result = (
           await api("import/commit", "POST", {
@@ -111,6 +118,7 @@ export default defineComponent({
             userGroupId: this.userGroupId,
           })
         ).count;
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.preview = null;
       });
     },
@@ -137,6 +145,7 @@ export default defineComponent({
         preview = null;
         password = '';
         source = '';
+        result = null;
       "
     >
       <n-tab-pane
@@ -202,7 +211,10 @@ export default defineComponent({
             :disabled="!source && !preview"
             :loading="busy"
             >{{ $t(preview ? "import" : "preview") }}</n-button
-          ><n-alert v-if="result" type="success" style="margin-top: 16px"
+          ><n-alert
+            v-if="result !== null"
+            type="success"
+            style="margin-top: 16px"
             >{{ $t("saved") }} · {{ result }}</n-alert
           ></n-form
         ></n-tab-pane

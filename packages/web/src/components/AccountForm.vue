@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent, type PropType } from "vue";
 import {
+  useMessage,
   NForm,
   NFormItem,
   NInput,
@@ -31,6 +32,9 @@ const initial = () => ({
 });
 import NModal from "./AccessibleModal.vue";
 export default defineComponent({
+  setup() {
+    return { message: useMessage() };
+  },
   components: {
     NModal,
     NForm,
@@ -203,6 +207,7 @@ export default defineComponent({
           data,
         );
         this.form.password = "";
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.$emit("saved", row);
       } catch (e) {
         useSession().fail(e);

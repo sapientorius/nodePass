@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent, h } from "vue";
 import {
+  useMessage,
   NButton,
   NCard,
   NDataTable,
@@ -29,6 +30,9 @@ import NModal from "../components/AccessibleModal.vue";
 import CustomFieldEditor from "../components/CustomFieldEditor.vue";
 import FieldHelp from "../components/FieldHelp.vue";
 export default defineComponent({
+  setup() {
+    return { message: useMessage() };
+  },
   components: {
     FieldHelp,
     CustomFieldEditor,
@@ -378,12 +382,14 @@ export default defineComponent({
         );
         this.form = {};
         this.show = false;
+        this.message.success(this.$t("saved"), { duration: 3000 });
         await this.load();
       });
     },
     async savePolicy() {
       await this.run(async () => {
         this.policy = await api("security", "PATCH", this.policy);
+        this.message.success(this.$t("saved"), { duration: 3000 });
         useSession().passwordPolicy = {
           minLength: this.policy.minLength,
           minScore: this.policy.minScore,
@@ -393,6 +399,7 @@ export default defineComponent({
     async backup() {
       await this.run(async () => {
         this.backupName = (await api("backups", "POST", {})).name;
+        this.message.success(this.$t("saved"), { duration: 3000 });
       });
     },
     options(rows: any[]) {
@@ -677,12 +684,7 @@ export default defineComponent({
               :input-props="{ 'aria-label': $t('notes') }"
               v-model:value="form.description"
               type="textarea" /></n-form-item
-          ><n-checkbox
-            v-if="section === 'clients'"
-            v-model:checked="form.isGlobal"
-            >{{ $t("all") }}</n-checkbox
-          ></template
-        >
+        ></template>
         <div class="modal-actions">
           <n-button @click="show = false">{{ $t("cancel") }}</n-button
           ><n-button

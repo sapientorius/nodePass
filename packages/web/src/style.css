@@ -146,6 +146,9 @@ nav {
   color: var(--accent);
   font-weight: 700;
 }
+.app-root:not(.is-dark) .nav-link.active {
+  color: #096d70;
+}
 .nav-count {
   margin-left: auto;
   font-size: 10px;

@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent } from "vue";
 import {
+  useMessage,
   NCard,
   NButton,
   NForm,
@@ -28,6 +29,9 @@ const initial = () => ({
 import NInputNumber from "../components/NumberField.vue";
 import NModal from "../components/AccessibleModal.vue";
 export default defineComponent({
+  setup() {
+    return { message: useMessage() };
+  },
   components: {
     NCard,
     NButton,
@@ -126,6 +130,7 @@ export default defineComponent({
           this.form,
         );
         this.show = false;
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.rows = await api("presets?all=true");
       });
     },

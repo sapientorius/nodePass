@@ -2,6 +2,7 @@
 import { defineComponent } from "vue";
 import { mapStores } from "pinia";
 import {
+  useMessage,
   NButton,
   NInput,
   NForm,
@@ -24,6 +25,9 @@ import PageAccent from "../components/PageAccent.vue";
 import PasswordStrength from "../components/PasswordStrength.vue";
 import NCard from "../components/PanelCard.vue";
 export default defineComponent({
+  setup() {
+    return { message: useMessage() };
+  },
   components: {
     NCard,
     NButton,
@@ -96,6 +100,8 @@ export default defineComponent({
           }),
         );
         this.confirmed = true;
+        if (register)
+          this.message.success(this.$t("saved"), { duration: 3000 });
         this.factors = await api("auth/factors");
       });
     },
@@ -119,6 +125,8 @@ export default defineComponent({
           ),
         );
         this.code = "";
+        if (this.enrollment)
+          this.message.success(this.$t("saved"), { duration: 3000 });
         this.enrollment = null;
         this.confirmed = true;
         this.factors = await api("auth/factors");
@@ -134,6 +142,7 @@ export default defineComponent({
     async recovery() {
       await this.run(async () => {
         this.codes = (await api("auth/recovery", "POST", {})).codes;
+        this.message.success(this.$t("saved"), { duration: 3000 });
       });
     },
     async remove(id: number) {
@@ -150,6 +159,7 @@ export default defineComponent({
           current: this.current,
           password: this.next,
         });
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.current = "";
         this.next = "";
         this.sessionStore.viewer = null;
