@@ -17,7 +17,7 @@ COPY packages/server/package.json packages/server/package.json
 COPY packages/web/package.json packages/web/package.json
 RUN npm ci --omit=dev --ignore-scripts --workspace=@nodepass/server --workspace=@nodepass/contracts && mkdir -p /app/data /app/packages/server/node_modules /app/packages/contracts/node_modules
 
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:78f07ef1b5ea71ad7c055df15d0dd8997f2d288f9158623c4d4ae3d765b7d50d AS production
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:cb606325b7ec4af55462cb0b424a53b452a5b4a894ffe841fcf1048d216fb9f8 AS production
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATA_DIR=/app/data
 WORKDIR /app
 COPY --from=dependencies /app/node_modules node_modules
