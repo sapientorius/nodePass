@@ -92,9 +92,72 @@ describe("independent authorization truth table", () => {
     ).toBe(true);
     expect(
       can(user, "view", { ...base, userGroupId: 11, isPrivateGroup: 1 }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       can({ ...user, isAdminApp: 1 }, "view", { ...base, isPrivateGroup: 1 }),
     ).toBe(false);
+  });
+  it("never lets membership, grants, ownership or administrator roles bypass group privacy", () => {
+    for (const full of [false, true]) {
+      for (const actor of [
+        user,
+        { ...user, isAdminApp: 1 },
+        { ...user, isAdminAcc: 1 },
+      ]) {
+        for (const action of [
+          "view",
+          "secret",
+          "edit",
+          "editSecret",
+          "delete",
+          "history",
+          "files",
+          "share",
+          "permissions",
+        ] as AccountAction[]) {
+          const account = {
+            ...base,
+            userId: user.id,
+            userGroupId: 11,
+            isPrivateGroup: 1,
+            users: [{ userId: user.id, isEdit: 1 }],
+            groups: [{ userGroupId: user.userGroupId, isEdit: 1 }],
+          };
+          expect(can(actor, action, account, full)).toBe(false);
+          expect(
+            can(actor, action, { ...account, userGroupId: 10 }, full),
+          ).toBe(true);
+        }
+      }
+    }
+  });
+  it("keeps ordinary memberships independent of the secondary-grant setting", () => {
+    for (const full of [false, true]) {
+      expect(can(user, "view", { ...base, userGroupId: 11 }, full)).toBe(true);
+      expect(can(user, "secret", { ...base, isPrivate: 1 }, full)).toBe(false);
+      expect(
+        can(
+          user,
+          "edit",
+          {
+            ...base,
+            users: [{ userId: 1, isEdit: 0 }],
+            groups: [{ userGroupId: 10, isEdit: 1 }],
+          },
+          full,
+        ),
+      ).toBe(false);
+    }
+    for (const value of [false, 0, "1", "false", undefined]) {
+      expect(
+        can({ ...user, profile: { accView: value } }, "view", {
+          ...base,
+          userId: 1,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      can({ ...user, profile: { accView: 1 } }, "view", { ...base, userId: 1 }),
+    ).toBe(true);
   });
 });

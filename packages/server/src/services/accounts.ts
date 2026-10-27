@@ -11,7 +11,12 @@ import {
 } from "@nodepass/contracts";
 import { createHash } from "node:crypto";
 import { audit, getSetting, type Database, type Row } from "../db.js";
-import { can, type AccountAction } from "../security/policy.js";
+import {
+  can,
+  hasAccountCapability,
+  isAdmin,
+  type AccountAction,
+} from "../security/policy.js";
 import type { RequestIdentity } from "../security/auth.js";
 import { matchingPresets } from "../compat/presets.js";
 import { checkLegacyPattern } from "../security/regex.js";
@@ -67,7 +72,50 @@ export class Accounts {
     readonly vault: Vault,
   ) {}
   async fullGroup(): Promise<boolean> {
-    return getSetting(this.db, "fullGroupAccess", false);
+    return (await getSetting(this.db, "fullGroupAccess", false)) === true;
+  }
+  private async restrict(
+    query: ReturnType<Database>,
+    params: ServiceParams,
+    alias: "a" | "h",
+  ): Promise<void> {
+    const { user } = identity(params),
+      ownGroups = [user.userGroupId, ...user.groups],
+      accountColumn = alias === "a" ? "a.id" : "h.accountId";
+    query.where((b) =>
+      b
+        .where(`${alias}.isPrivate`, 0)
+        .orWhereNull(`${alias}.isPrivate`)
+        .orWhere(`${alias}.userId`, user.id),
+    );
+    query.where((b) =>
+      b
+        .where(`${alias}.isPrivateGroup`, 0)
+        .orWhereNull(`${alias}.isPrivateGroup`)
+        .orWhere(`${alias}.userGroupId`, user.userGroupId),
+    );
+    if (!isAdmin(user)) {
+      const shareGroups = (await this.fullGroup())
+        ? ownGroups
+        : [user.userGroupId];
+      query.where((b) =>
+        b
+          .where(`${alias}.userId`, user.id)
+          .orWhereIn(`${alias}.userGroupId`, ownGroups)
+          .orWhereExists(
+            this.db("AccountToUser as au")
+              .select(this.db.raw("1"))
+              .whereRaw("?? = ??", ["au.accountId", accountColumn])
+              .where("au.userId", user.id),
+          )
+          .orWhereExists(
+            this.db("AccountToUserGroup as ag")
+              .select(this.db.raw("1"))
+              .whereRaw("?? = ??", ["ag.accountId", accountColumn])
+              .whereIn("ag.userGroupId", shareGroups),
+          ),
+      );
+    }
   }
   private async defaults(
     data: AccountInput,
@@ -230,6 +278,7 @@ export class Accounts {
             "categoryId",
             "clientId",
             "favorite",
+            "privateOnly",
             "tag",
             "limit",
             "skip",
@@ -247,50 +296,16 @@ export class Accounts {
       .join("Category as c", "c.id", "a.categoryId")
       .join("Client as cl", "cl.id", "a.clientId")
       .select("a.id");
+    if (!hasAccountCapability(user, "view"))
+      return { total: 0, limit, skip, data: [] };
+    await this.restrict(base, params, "a");
     if (
-      !can(user, "create") &&
-      !user.profile.accView &&
-      !user.isAdminApp &&
-      !user.isAdminAcc
+      q.privateOnly !== undefined &&
+      !["true", "false"].includes(q.privateOnly)
     )
-      return { total: 0, limit, skip, data: [] };
-    if (!user.isAdminApp && !user.isAdminAcc && !user.profile.accView)
-      return { total: 0, limit, skip, data: [] };
-    base.where((b) =>
-      b
-        .where("a.isPrivate", 0)
-        .orWhereNull("a.isPrivate")
-        .orWhere("a.userId", user.id),
-    );
-    const ownGroups = [user.userGroupId, ...user.groups];
-    base.where((b) =>
-      b
-        .where("a.isPrivateGroup", 0)
-        .orWhereNull("a.isPrivateGroup")
-        .orWhereIn("a.userGroupId", ownGroups),
-    );
-    if (!user.isAdminApp && !user.isAdminAcc) {
-      const shareGroups = (await this.fullGroup())
-        ? ownGroups
-        : [user.userGroupId];
-      base.where((b) =>
-        b
-          .where("a.userId", user.id)
-          .orWhereIn("a.userGroupId", ownGroups)
-          .orWhereExists(
-            this.db("AccountToUser as au")
-              .select(this.db.raw("1"))
-              .whereRaw("au.accountId = a.id")
-              .where("au.userId", user.id),
-          )
-          .orWhereExists(
-            this.db("AccountToUserGroup as ag")
-              .select(this.db.raw("1"))
-              .whereRaw("ag.accountId = a.id")
-              .whereIn("ag.userGroupId", shareGroups),
-          ),
-      );
-    }
+      throw new BadRequest("Invalid private account filter");
+    if (q.privateOnly === "true")
+      base.where({ "a.isPrivate": 1, "a.userId": user.id });
     if (q.op !== undefined && !["and", "or"].includes(q.op))
       throw new BadRequest("Invalid filter operator");
     const filters: ((builder: ReturnType<Database>) => void)[] = [];
@@ -434,6 +449,8 @@ export class Accounts {
       !user.profile.accPrivateGroup
     )
       throw new Forbidden("Private group accounts are not permitted");
+    if (data.isPrivateGroup && data.userGroupId !== user.userGroupId)
+      throw new BadRequest("Group-private accounts require your primary group");
   }
   private columns(data: AccountInput): Row {
     const { password: _, version: __, tags: ___, ...columns } = data;
@@ -579,7 +596,14 @@ export class Accounts {
         throw new Conflict("Account changed; reload before saving");
       if (data.password !== undefined)
         await this.access(id, params, "editSecret", trx);
-      await this.references(data, user, trx);
+      await this.references(
+        {
+          ...data,
+          isPrivateGroup: data.isPrivateGroup ?? row.isPrivateGroup === 1,
+        },
+        user,
+        trx,
+      );
       if (data.parentId) {
         if (data.parentId === row.id)
           throw new BadRequest("Account cannot link itself");
@@ -663,8 +687,12 @@ export class Accounts {
   }
   async history(id: Id, params: ServiceParams): Promise<Row[]> {
     await this.access(id, params, "history");
-    return this.db("AccountHistory")
-      .where({ accountId: integer(id) })
+    const query = this.db("AccountHistory as h").where(
+      "h.accountId",
+      integer(id),
+    );
+    await this.restrict(query, params, "h");
+    return query
       .select(
         "id",
         "name",
@@ -685,9 +713,12 @@ export class Accounts {
   ): Promise<{ password: string }> {
     await this.access(id, params, "history");
     await this.access(id, params, "secret");
-    const row = await this.db("AccountHistory")
-      .where({ id: historyId, accountId: integer(id) })
-      .first();
+    const query = this.db("AccountHistory as h").where({
+      "h.id": historyId,
+      "h.accountId": integer(id),
+    });
+    await this.restrict(query, params, "h");
+    const row = await query.first();
     if (!row) throw new NotFound("History not found");
     await audit(this.db, identity(params).user.id, "history.secret", historyId);
     return {

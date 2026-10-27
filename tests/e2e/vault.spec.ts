@@ -37,7 +37,7 @@ test("fresh setup, MFA, accounts, themes, responsive layout and passwordless pas
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Dein Tresor beginnt hier." }),
+    page.getByRole("heading", { name: "nodePass einrichten" }),
   ).toBeVisible();
   const accessible = async () => {
     await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);

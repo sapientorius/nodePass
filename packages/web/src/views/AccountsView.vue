@@ -4,6 +4,7 @@ import { mapStores } from "pinia";
 import {
   useMessage,
   NButton,
+  NCheckbox,
   NInput,
   NSelect,
   NTag,
@@ -36,6 +37,7 @@ export default defineComponent({
   },
   components: {
     NButton,
+    NCheckbox,
     NInput,
     NSelect,
     NTag,
@@ -231,6 +233,10 @@ export default defineComponent({
       void this.load();
     },
     "accountsStore.tag"() {
+      this.accountsStore.page = 1;
+      void this.load();
+    },
+    "accountsStore.privateOnly"() {
       this.accountsStore.page = 1;
       void this.load();
     },
@@ -451,6 +457,9 @@ export default defineComponent({
         :input-props="{ 'aria-label': $t('tags') }"
         class="filter-select"
       />
+      <n-checkbox v-model:checked="accountsStore.privateOnly">{{
+        $t("private")
+      }}</n-checkbox>
       <div class="view-toggle">
         <n-button
           :type="accountsStore.view === 'cards' ? 'primary' : 'default'"

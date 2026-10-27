@@ -18,6 +18,14 @@ The bundled `packages/server/resources/schema.sql` contains the 27 original base
 
 CI generates fresh reference vectors in an isolated PHP container and requires them alongside the fixed vectors. Defuse integrity is checked before decryption. PHP serialization is read as a bounded data structure, without PHP object instantiation. Unknown classes, references, duplicate/prototype keys, excessive nesting and oversized inputs are rejected. Missing historical keys are reported with table/record context. See [NOTICE.md](../NOTICE.md).
 
+## Account permissions
+
+Application and account administrators can access ordinary accounts independently of group membership. Personal private accounts remain restricted to their owner; group-private accounts require the user's primary group, including for administrators. A displayed main group is not an exclusive access list: explicit user and additional group grants can also permit access to non-private accounts.
+
+The sysPass `accountFullGroupAccess` setting is preserved during migration and can be changed by an application administrator under **Security → Account access**. With it disabled, an account's additional group grants match only the user's primary group. When enabled, the user's additional group memberships also qualify. Membership in a non-private account's main group applies independently. This setting does not override privacy or profile permissions.
+
+Password history requires current account access and authorization for each historical record's original owner, group and privacy flags. Current explicit grants are considered without overriding historical privacy. Denied histories are excluded before the result limit and cannot be revealed or restored.
+
 ## Custom fields
 
 Supported current module IDs are account `1`, category `101`, client `301`, user `701`, group `801`, profile `901` and API token `1001`, plus historical aliases `10`, `61`, `62`, `71` and `72`. Stored IDs are not rewritten. Missing targets, duplicate assignments, unknown modules, conflicting definitions and missing expected foreign keys stop preflight. Secret/encrypted values stay out of overviews; only explicitly permitted plaintext fields appear in cards and tables.

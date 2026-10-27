@@ -850,6 +850,22 @@ export async function createApp(
     });
     ctx.body = policy;
   });
+  router.get("/api/v1/account-access", async (ctx) => {
+    await admin(ctx);
+    ctx.body = { fullGroupAccess: await accounts.fullGroup() };
+  });
+  router.patch("/api/v1/account-access", async (ctx) => {
+    const id = await admin(ctx, true),
+      data = body(ctx);
+    exact(data, ["fullGroupAccess"]);
+    if (typeof data.fullGroupAccess !== "boolean")
+      throw new BadRequest("Invalid secondary group access setting");
+    await db.transaction(async (trx) => {
+      await putSetting(trx, "fullGroupAccess", data.fullGroupAccess);
+      await audit(trx, id.user.id, "security.account-access");
+    });
+    ctx.body = { fullGroupAccess: data.fullGroupAccess };
+  });
   router.get("/api/v1/events", async (ctx) => {
     await permission(ctx, "evl");
     if (
