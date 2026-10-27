@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseConfig, type LegacyConfig } from "./compat/config.js";
-import { proxyMatcher } from "./security/proxy.js";
+import { proxyPeerMatcher } from "./security/proxy.js";
 export interface Config {
   production: boolean;
   port: number;
@@ -100,7 +100,7 @@ export function loadConfig(env = process.env): Config {
     throw new Error("Invalid port");
   if (!/^[a-zA-Z0-9_]+$/.test(config.database.database))
     throw new Error("Invalid database name");
-  proxyMatcher(config.trustedProxies);
+  proxyPeerMatcher(config.trustedProxies);
   if (config.trustProxy && !config.trustedProxies.length)
     throw new Error("TRUSTED_PROXIES is required when TRUST_PROXY=1");
   return config;

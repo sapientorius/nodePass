@@ -21,7 +21,7 @@ services:
       DEPLOYMENT_KEY_FILE: /run/secrets/deployment-key
       SETUP_TOKEN_FILE: /run/secrets/setup-token
       TRUST_PROXY: ${TRUST_PROXY:-1}
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the immediate reverse proxy IP or CIDR}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the immediate reverse proxy IP, CIDR or DNS name}
     secrets: [deployment-key, setup-token, db-password-app]
     volumes: [nodepass-data:/app/data]
     ports: ["${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-3000}:3000"]

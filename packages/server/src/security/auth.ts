@@ -16,7 +16,7 @@ import {
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { createHmac, randomBytes } from "node:crypto";
-import { proxyMatcher } from "./proxy.js";
+import { proxyMatcher, proxyPeerMatcher } from "./proxy.js";
 import { matchingPresets } from "../compat/presets.js";
 import { sessionRange } from "../compat/preset-validation.js";
 import { Client } from "ldapts";
@@ -75,11 +75,14 @@ export function exact(data: Row, keys: string[]): void {
     throw new BadRequest("Unknown input field");
 }
 export class Auth {
+  private readonly trustedPeer: ReturnType<typeof proxyPeerMatcher>;
   constructor(
     readonly db: Database,
     readonly config: Config,
     readonly vault: Vault,
-  ) {}
+  ) {
+    this.trustedPeer = proxyPeerMatcher(config.trustedProxies);
+  }
   async policy(): Promise<SecurityPolicy> {
     return getSetting(this.db, "security", defaultPolicy);
   }
@@ -442,7 +445,7 @@ export class Auth {
   async sso(ctx: Context): Promise<void> {
     if (
       !this.config.trustProxy ||
-      !proxyMatcher(this.config.trustedProxies)(ctx.req.socket.remoteAddress)
+      !(await this.trustedPeer(ctx.req.socket.remoteAddress))
     )
       throw new NotAuthenticated("Trusted ingress required");
     await this.limit("sso/ip", ctx.ip, 40);

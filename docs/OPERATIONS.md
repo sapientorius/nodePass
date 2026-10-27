@@ -6,7 +6,7 @@
 
 Start with `.env.example`. Production Compose reads file-backed secrets; platform variants use their secret/environment management. Keep `DEPLOYMENT_KEY`, `SETUP_TOKEN`, database passwords, original configurations and input files out of Git. Retain the deployment key for every backup that depends on it.
 
-`PUBLIC_URL` must be the exact external HTTPS origin. `TRUST_PROXY=1` requires an isolated trusted proxy; `TRUSTED_PROXIES` lists immediate peer addresses/CIDRs, not arbitrary clients. The proxy must overwrite forwarded headers. See [installation](INSTALLATION.md#fresh-installation-with-docker-compose). Legacy configuration may be mounted read-only using the existing-database override.
+`PUBLIC_URL` must be the exact external HTTPS origin. `TRUST_PROXY=1` requires a trusted proxy; `TRUSTED_PROXIES` lists immediate peer IPs/CIDRs or explicitly configured DNS names, not arbitrary clients. Names are resolved for incoming forwarded requests without retaining old IPs; failed resolution denies those requests but does not block startup. Secure the Docker network and DNS/aliases. The platform defaults are `coolify-proxy` and `dokploy-traefik`; no broad subnet trust is necessary. The proxy must overwrite forwarded headers. See [installation](INSTALLATION.md#fresh-installation-with-docker-compose) for generated secrets and platform setup. Legacy configuration may be mounted read-only using the existing-database override.
 
 This version targets **one application process per installation**. REST and polling need no WebSocket proxy. Multiple active replicas require additional coordinated background work and acceptance testing; do not enable automatic scaling on the assumption that the migration DB lock covers this.
 
@@ -88,7 +88,7 @@ Mount inputs read-only and make them readable only by app UID 65532. Keep sensit
 
 - `/health/live` checks the process; `/health/ready` checks DB, setup and vault state. Before completed setup, readiness 503 is expected.
 - For startup failures, check secret-file permissions, the deployment key, DB reachability and migration checksums. Do not print secret configuration.
-- For proxy-related 403 responses, verify `PUBLIC_URL`, immediate peer, `TRUSTED_PROXIES`, HTTPS forwarding, Origin and CSRF. Do not bypass these checks by trusting every source.
+- For proxy-related 403 responses, verify `PUBLIC_URL`, immediate peer, `TRUSTED_PROXIES`, proxy DNS resolution from the app's network, HTTPS forwarding, Origin and CSRF. A missing/unresolvable proxy is denied until available. Do not bypass these checks by trusting every source.
 - A decryption error with a record ID requires investigating source data/historical keys; never replace it with empty data.
 - Before updating, test backup/restore, verify the exact commit/image and gate, restart in a maintenance window, then check readiness, authentication, permissions and secret access.
 - After an incomplete takeover, preserve the partial DB and restore the original backup separately before pointing sysPass at it. See [rollback](MIGRATION.md#verification-and-rollback).

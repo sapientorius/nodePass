@@ -25,6 +25,15 @@ describe("deployment configuration fails closed", () => {
       }).trustedProxies,
     ).toHaveLength(2);
   });
+  it("accepts configured proxy names before DNS is available", () => {
+    expect(
+      loadConfig({
+        ...base,
+        TRUST_PROXY: "1",
+        TRUSTED_PROXIES: " coolify-proxy, dokploy-traefik,127.0.0.1 ",
+      }).trustedProxies,
+    ).toEqual(["coolify-proxy", "dokploy-traefik", "127.0.0.1"]);
+  });
   it.each([
     { PUBLIC_URL: "https://vault.example.org/path" },
     { PUBLIC_URL: "https://user:pass@vault.example.org" },
@@ -42,6 +51,8 @@ describe("deployment configuration fails closed", () => {
     { DB_NAME: "unsafe-db" },
     { TRUST_PROXY: "1" },
     { TRUST_PROXY: "1", TRUSTED_PROXIES: "0.0.0.0/999" },
+    { TRUST_PROXY: "1", TRUSTED_PROXIES: "*" },
+    { TRUST_PROXY: "1", TRUSTED_PROXIES: "https://coolify-proxy" },
   ])("rejects invalid configuration %j", (env) =>
     expect(() => loadConfig({ ...base, ...env })).toThrow(),
   );

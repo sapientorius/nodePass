@@ -2,6 +2,22 @@
 
 Versions before 1.0 may include breaking changes in minor releases. Patch releases contain compatible fixes. Release candidates are intended for evaluation with synthetic data or a separate representative copy.
 
+## [0.1.1]
+
+### Changed
+
+- Trusted reverse proxies can be configured by DNS name as well as IP address or CIDR. Names are resolved for incoming forwarded requests, allowing first deployment and proxy IP changes without manually discovering container addresses. Missing DNS denies forwarded requests without preventing application startup; HTTP and signed SSO retain the immediate-peer check.
+- Coolify deployments default to the named `coolify-proxy` ingress and use Coolify's persistent generators for the 32-byte Base64 deployment key, setup token and independent application/root database passwords.
+- Dokploy deployments default to `dokploy-traefik`. A cryptographic secret-generation template and digest-pinned Base64 import are included in deployment bundles; source checkouts can generate an import with `npm run deploy:dokploy`.
+- Installation and operating instructions explain platform networking, generated-secret persistence and safe upgrades of existing installations.
+
+### Compatibility and upgrade notes
+
+- Preserve all existing secrets and volumes. Before adopting the new Coolify template, copy the existing deployment key, setup token and database passwords into their corresponding `SERVICE_*` variables as described in [Installation](docs/INSTALLATION.md#coolify). Do not replace them with newly generated values.
+- Dokploy's template import is for new installations only: reimporting generates new secrets. For updates, retain the saved environment and volumes and change the verified image reference.
+- No database schema change is introduced by these deployment improvements. Use one application process, the release's verified image digest and the existing backup/restore procedures.
+- This release records no publicly disclosed security corrections in `release-security.json`; this is not a security certification or independent audit.
+
 ## [0.1.0]
 
 ### Added

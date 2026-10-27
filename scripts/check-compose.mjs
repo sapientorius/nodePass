@@ -6,6 +6,11 @@ const env = {
   TRUSTED_PROXIES: "172.30.0.1/32",
   DEPLOYMENT_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   SETUP_TOKEN: "synthetic-compose-validation-token-only",
+  SERVICE_REALBASE64_32_NODEPASSKEY:
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  SERVICE_PASSWORD_64_NODEPASSSETUP: "synthetic-coolify-setup-token-only",
+  SERVICE_PASSWORD_64_NODEPASSDB: "synthetic-coolify-password-only",
+  SERVICE_PASSWORD_64_NODEPASSDBROOT: "synthetic-coolify-root-password-only",
   DB_PASSWORD: "synthetic-compose-password-only",
   DB_ROOT_PASSWORD: "synthetic-compose-root-password-only",
   SYSPASS_CONFIG_FILE: resolve("tests/fixtures/config.xml"),
@@ -31,6 +36,9 @@ for (const files of [
     "docker-compose.existing.yml",
   ],
 ]) {
+  const platform = files.some((file) => /\.(coolify|dokploy)\.yml$/.test(file));
+  const composeEnv = { ...env };
+  if (platform) delete composeEnv.TRUSTED_PROXIES;
   const output = await new Promise((resolve, reject) => {
     const child = spawn(
         "docker",
@@ -41,7 +49,7 @@ for (const files of [
           "--format",
           "json",
         ],
-        { env, stdio: ["ignore", "pipe", "pipe"] },
+        { env: composeEnv, stdio: ["ignore", "pipe", "pipe"] },
       ),
       chunks = [],
       errors = [];
@@ -63,6 +71,30 @@ for (const files of [
   });
   const config = JSON.parse(output),
     app = config.services.app;
+  if (platform) {
+    const coolify = files.includes("docker-compose.coolify.yml");
+    if (
+      app.environment.TRUST_PROXY !== "1" ||
+      app.environment.TRUSTED_PROXIES !==
+        (coolify ? "coolify-proxy" : "dokploy-traefik") ||
+      app.ports?.length ||
+      app.environment.DB_PASSWORD !==
+        config.services.db.environment.MARIADB_PASSWORD
+    )
+      throw new Error(
+        "Platform proxy trust or shared database credential is invalid",
+      );
+    if (
+      coolify &&
+      (app.environment.DEPLOYMENT_KEY !==
+        env.SERVICE_REALBASE64_32_NODEPASSKEY ||
+        app.environment.SETUP_TOKEN !== env.SERVICE_PASSWORD_64_NODEPASSSETUP ||
+        app.environment.DB_PASSWORD !== env.SERVICE_PASSWORD_64_NODEPASSDB ||
+        config.services.db.environment.MARIADB_ROOT_PASSWORD !==
+          env.SERVICE_PASSWORD_64_NODEPASSDBROOT)
+    )
+      throw new Error("Coolify must reuse its persistent generated secrets");
+  }
   if (
     files.includes("docker-compose.release.yml") &&
     (app.build ||

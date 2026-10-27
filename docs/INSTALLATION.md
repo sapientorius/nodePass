@@ -82,7 +82,9 @@ TRUST_PROXY=1
 TRUSTED_PROXIES=172.20.0.2
 ```
 
-Replace the example proxy address with the **actual immediate peer** or a dedicated ingress-only CIDR. A proxy on the Docker host may appear as the bridge gateway. Verify its real source address; never trust `0.0.0.0/0`. Configure the proxy to overwrite `X-Forwarded-Proto` and `X-Real-IP`. Forwarded headers from untrusted peers are rejected.
+Replace the example proxy address with the **actual immediate peer**, a dedicated ingress-only CIDR, or a trusted proxy's DNS name on a private container network. A proxy on the Docker host may appear as the bridge gateway. Never trust `0.0.0.0/0` or an entire shared platform network. Configure the proxy to overwrite `X-Forwarded-Proto` and `X-Real-IP`. Forwarded headers from untrusted peers are rejected.
+
+`TRUSTED_PROXIES` accepts a comma-separated list of IPs, CIDRs and DNS names. Named peers are resolved when forwarded requests arrive, with no application address cache, so a recreated proxy can receive a different IP. Missing DNS does not prevent startup, but requests from unresolved peers are denied until resolution succeeds. Only configured names are resolved; request headers never select a trusted name. Protect the container network, its DNS configuration and proxy name/aliases: name resolution is part of this trust boundary.
 
 ```sh
 docker compose up --detach --build
@@ -99,18 +101,41 @@ Back up `secrets/deployment-key` separately from encrypted backups. Setup change
 
 Use `docker-compose.coolify.yml` with build context **`.`** at the repository root. Assign the HTTPS domain to service **app**, port **3000**, through Coolify's domain configuration. Set `PUBLIC_URL` to that exact origin.
 
-Configure persistent secrets/environment values in the platform:
+For a **new installation**, Coolify generates and persists these values when it parses the Compose definition:
 
-- `DEPLOYMENT_KEY`: 32 random bytes encoded as canonical Base64.
-- `SETUP_TOKEN`: at least 32 random characters.
-- `DB_PASSWORD` and `DB_ROOT_PASSWORD`: independent random values.
-- `PUBLIC_URL` and `TRUSTED_PROXIES`: the actual origin and isolated ingress peers.
+- `SERVICE_REALBASE64_32_NODEPASSKEY` supplies `DEPLOYMENT_KEY`: exactly 32 random bytes encoded as Base64. `SERVICE_BASE64_*` is not the same generator and must not be substituted.
+- `SERVICE_PASSWORD_64_NODEPASSSETUP` supplies the 64-character `SETUP_TOKEN`.
+- `SERVICE_PASSWORD_64_NODEPASSDB` supplies the same database password to app and MariaDB.
+- `SERVICE_PASSWORD_64_NODEPASSDBROOT` supplies a separate database root password.
 
-This variant publishes no app or database host ports. Configure DNS/TLS in Coolify and preserve secret values across redeployments. Validate proxy headers and source addresses in your own deployment. See [Coolify's Compose documentation](https://coolify.io/docs/applications/builds/docker-compose).
+Read the setup token from Coolify's protected Environment Variables page when opening the setup wizard. Back up the deployment key separately from encrypted backups. Do not regenerate these values on redeployments.
+
+`TRUSTED_PROXIES` defaults to `coolify-proxy`. In normal Coolify Compose mode, Coolify creates the stack network and connects its proxy automatically; no static IP, custom subnet, predefined-network toggle or extra `networks:` block is needed. Keep the default unless you operate a differently named/custom proxy. Do not enable Raw Compose mode for this template.
+
+**Existing installations:** before adopting this template, copy the existing `DEPLOYMENT_KEY`, `SETUP_TOKEN`, `DB_PASSWORD` and `DB_ROOT_PASSWORD` into the corresponding `SERVICE_*` variables above. Preserve their exact values; newly generated replacements cannot unlock existing data or change an initialized MariaDB password automatically.
+
+This variant publishes no app or database host ports. Configure DNS/TLS in Coolify and validate proxy headers/name resolution in your own deployment. See [Coolify's generated Compose values](https://coolify.io/docs/applications/builds/docker-compose) and [networking](https://coolify.io/docs/core/networking-in-coolify).
 
 ## Dokploy
 
-Use `docker-compose.dokploy.yml`, build context **`.`**, and the same secret variables as above. In **Domains**, assign the HTTPS host to service **app**, port **3000**. Dokploy adds Traefik labels when deploying. Redeploy after domain changes; give the database no domain.
+Dokploy supports automatic generation through **template import**, rather than Coolify's `SERVICE_*` variables. For a new installation from a verified release, use `dokploy-import.b64` in the deployment archive:
+
+1. Create an empty **Docker Compose** service and open **Advanced → Import / Base64**.
+2. Paste the contents of `dokploy-import.b64` and import once. Dokploy generates and stores a deployment key, setup token and two independent database passwords using the cryptographic `${base64:N}` helper in `dokploy.toml`.
+3. In **Domains**, choose the public hostname, service **app**, port **3000**, and enable HTTPS with a certificate. The import creates a generated hostname; replace it if desired. Dokploy's importer does not automatically enable certificates.
+4. Set `PUBLIC_URL` to that exact HTTPS origin if you change the generated hostname. Deploy, then read `SETUP_TOKEN` from the protected environment settings to complete setup.
+
+The import already uses the release's pinned image and requires no source checkout/build context. It contains generator instructions, not actual secrets. **Import only for a new installation:** reimporting regenerates keys and passwords. Updates must preserve the saved environment, domains and volumes and change only the verified image reference.
+
+From a source checkout, create an import payload for an already published and verified image:
+
+```sh
+npm run --silent deploy:dokploy -- ghcr.io/sapientorius/nodepass@sha256:REPLACE_WITH_VERIFIED_DIGEST
+```
+
+For Git-based source builds, use `docker-compose.dokploy.yml` with context **`.`** and provision the four secrets in Dokploy's environment settings (`DEPLOYMENT_KEY`, `SETUP_TOKEN`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`). Simply loading that YAML does not run template generators.
+
+`TRUSTED_PROXIES` defaults to `dokploy-traefik`; fixed proxy IPs are unnecessary. Dokploy adds ingress labels/networking for configured domains. Redeploy after domain changes; give the database no domain or published port.
 
 Docker Swarm requires an already built, pinned image instead of `build:`. Validate the actual platform domain, ingress network and secret persistence. See [Dokploy's domain documentation](https://docs.dokploy.com/docs/core/docker-compose/domains).
 

@@ -49,7 +49,7 @@ import { Integrations } from "./services/integrations.js";
 import { jobs } from "./services/jobs.js";
 import { Updates } from "./services/updates.js";
 import { UpdateSource } from "./services/update-source.js";
-import { proxyMatcher } from "./security/proxy.js";
+import { proxyPeerMatcher } from "./security/proxy.js";
 import { Tokens, Presets } from "./services/management.js";
 import { openApi } from "./openapi.js";
 import { token } from "./security/crypto.js";
@@ -130,7 +130,7 @@ export async function createApp(
   app.proxy = config.trustProxy;
   app.proxyIpHeader = "X-Real-IP";
   app.maxIpsCount = 1;
-  const trustedPeer = proxyMatcher(config.trustedProxies);
+  const trustedPeer = proxyPeerMatcher(config.trustedProxies);
   const limiter = new Map<string, { count: number; until: number }>();
   app.use(async (ctx, next) => {
     ctx.set({
@@ -157,7 +157,8 @@ export async function createApp(
       ].some((h) => ctx.get(h));
       if (
         forwarded &&
-        (!config.trustProxy || !trustedPeer(ctx.req.socket.remoteAddress))
+        (!config.trustProxy ||
+          !(await trustedPeer(ctx.req.socket.remoteAddress)))
       )
         throw new Forbidden("Untrusted proxy headers");
       if (config.production && !ctx.secure && !ctx.path.startsWith("/health/"))

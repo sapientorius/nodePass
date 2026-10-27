@@ -16,14 +16,15 @@ services:
     expose: ["3000"]
     environment:
       PUBLIC_URL: ${PUBLIC_URL:?Set the HTTPS domain assigned to app}
-      DEPLOYMENT_KEY: ${DEPLOYMENT_KEY:?Generate 32 random bytes as base64}
-      SETUP_TOKEN: ${SETUP_TOKEN:?Generate a random setup token}
+      DEPLOYMENT_KEY: ${SERVICE_REALBASE64_32_NODEPASSKEY:?Keep the generated deployment key}
+      SETUP_TOKEN: ${SERVICE_PASSWORD_64_NODEPASSSETUP:?Keep the generated setup token}
       DB_HOST: db
       DB_NAME: nodepass
       DB_USER: nodepass
-      DB_PASSWORD: ${DB_PASSWORD:?Generate a database password}
+      DB_PASSWORD: ${SERVICE_PASSWORD_64_NODEPASSDB:?Keep the generated database password}
       TRUST_PROXY: "1"
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the isolated ingress CIDR}
+      # Coolify connects this named proxy to the stack network automatically.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-coolify-proxy}
     volumes: [nodepass-data:/app/data]
     depends_on:
       db:
@@ -34,8 +35,8 @@ services:
     environment:
       MARIADB_DATABASE: nodepass
       MARIADB_USER: nodepass
-      MARIADB_PASSWORD: ${DB_PASSWORD:?}
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Generate a separate root password}
+      MARIADB_PASSWORD: ${SERVICE_PASSWORD_64_NODEPASSDB:?}
+      MARIADB_ROOT_PASSWORD: ${SERVICE_PASSWORD_64_NODEPASSDBROOT:?Keep the generated root password}
     volumes: [database:/var/lib/mysql]
     healthcheck:
       test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
