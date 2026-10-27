@@ -18,6 +18,8 @@ import {
 } from "../scripts/release-policy.mjs";
 import { validateHosting } from "../scripts/check-release-hosting.mjs";
 import { allowTag, existingRegistryDigest } from "../scripts/publish-image.mjs";
+import { prepareRelease } from "../scripts/prepare-release.mjs";
+import YAML from "yaml";
 
 const directories: string[] = [],
   commit = "a".repeat(40);
@@ -194,6 +196,81 @@ describe("release OCI integrity and tested-image identity", () => {
     );
     return { directory, identity, config, layer, descriptor };
   }
+  it("packages the Dokploy importer with the exact verified release image and no generated secrets", async () => {
+    const f = await fixture(),
+      root = await temporary();
+    await cp(f.directory, join(root, ".cache/release/oci"), {
+      recursive: true,
+    });
+    await mkdir(join(root, "output/security"), { recursive: true });
+    await writeFile(
+      join(root, "output/security/image-manifest.json"),
+      JSON.stringify({
+        Id: f.config.digest,
+        Os: "linux",
+        Architecture: "amd64",
+      }),
+    );
+    for (const file of [
+      "docker-compose.yml",
+      "docker-compose.coolify.yml",
+      "docker-compose.dokploy.yml",
+      "docker-compose.existing.yml",
+      "dokploy.toml",
+      ".env.example",
+      "COPYING",
+      "NOTICE.md",
+      "CONTRIBUTING.md",
+      "SECURITY.md",
+      "release-security.json",
+    ])
+      await cp(resolve(file), join(root, file));
+    await cp(resolve(".github/rulesets"), join(root, ".github/rulesets"), {
+      recursive: true,
+    });
+    await cp(resolve("docs"), join(root, "docs"), {
+      recursive: true,
+      filter: (path) => !path.includes("screenshots"),
+    });
+    await writeFile(
+      join(root, "CHANGELOG.md"),
+      `# Changelog\n\n## [${f.identity.version}]\n\nSynthetic packaging verification.\n`,
+    );
+    await writeFile(
+      join(root, "sbom.cdx.json"),
+      JSON.stringify({
+        bomFormat: "CycloneDX",
+        components: [{ name: "synthetic-component" }],
+      }),
+    );
+    const result = await prepareRelease(root, f.identity, {
+      ref: "local-test",
+      runId: "synthetic",
+      attempt: "1",
+      url: "https://example.test/verification",
+    });
+    const archive = join(
+      root,
+      `.cache/release/assets/nodepass-${f.identity.version}-deploy.tar.gz`,
+    );
+    const unpack = (file: string) =>
+      execFileSync("tar", ["-xOf", archive, "./" + file], { encoding: "utf8" });
+    const payload = JSON.parse(
+      Buffer.from(unpack("dokploy-import.b64").trim(), "base64").toString(),
+    );
+    const imported = YAML.parse(payload.compose);
+    expect(imported.services.app.image).toBe(result.manifest.image.reference);
+    expect(imported.services.app.build).toBeUndefined();
+    expect(payload.config).toBe(unpack("dokploy.toml"));
+    expect(payload.config).toContain('deployment_key = "${base64:32}"');
+    expect(
+      YAML.parse(unpack("docker-compose.dokploy.yml")).services.app.image,
+    ).toBe(imported.services.app.image);
+    expect(
+      YAML.parse(unpack("docker-compose.coolify.yml")).services.app.environment
+        .DEPLOYMENT_KEY,
+    ).toContain("SERVICE_REALBASE64_32_NODEPASSKEY");
+  });
   it("verifies every blob and binds the OCI image to the tested configuration", async () => {
     const f = await fixture();
     expect(await verifyOci(f.directory, f.identity, f.config.digest)).toBe(

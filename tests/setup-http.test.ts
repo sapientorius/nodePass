@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { once } from "node:events";
+import { Resolver } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -47,6 +48,8 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     throw new Error("Setup job did not finish");
   };
   beforeAll(async () => {
+    vi.spyOn(Resolver.prototype, "resolve4").mockResolvedValue(["127.0.0.1"]);
+    vi.spyOn(Resolver.prototype, "resolve6").mockResolvedValue([]);
     if (existsSync(".cache/integration.env"))
       process.loadEnvFile(".cache/integration.env");
     const source = await isolatedDatabase(loadConfig()),
@@ -105,7 +108,7 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
         publicUrl: "https://vault.example.test",
         rpId: "vault.example.test",
         trustProxy: true,
-        trustedProxies: ["127.0.0.1/32"],
+        trustedProxies: ["coolify-proxy"],
         legacy: { passwordSalt: legacyReference.publicLink.salt },
       },
       undefined,
@@ -127,6 +130,27 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     if (runtime) await runtime.close();
     if (drop) await drop();
     if (directory) await rm(directory, { recursive: true, force: true });
+  });
+  it("rejects spoofed proxy headers during missing DNS and IP changes, then recovers", async () => {
+    const resolve4 = vi.mocked(Resolver.prototype.resolve4);
+    try {
+      resolve4.mockRejectedValue(new Error("ENOTFOUND"));
+      expect((await call("status")).response.status).toBe(403);
+      expect((await fetch(base + "/health/live")).status).toBe(200);
+      resolve4.mockResolvedValue(["127.0.0.2"]);
+      const rejected = await call("status", undefined, setupToken, {
+        "x-real-ip": "127.0.0.2",
+        "x-forwarded-for": "127.0.0.2",
+      });
+      expect(rejected.response.status).toBe(403);
+      expect(rejected.value.message).toBe("Untrusted proxy headers");
+      resolve4.mockResolvedValue(["127.0.0.1"]);
+      expect((await call("status")).response.status).toBe(200);
+      resolve4.mockRejectedValue(new Error("ETIMEOUT"));
+      expect((await call("status")).response.status).toBe(403);
+    } finally {
+      resolve4.mockResolvedValue(["127.0.0.1"]);
+    }
   });
   it("requires HTTPS and the setup token, restricts concurrency and sanitizes unexpected failures", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -1,5 +1,6 @@
 # Dokploy Docker Compose (not Swarm Stack). Configure Domains for app, port 3000.
 # Dokploy adds its own ingress labels/network. Database has no host ports.
+# Import with dokploy.toml to generate persistent secrets automatically.
 services:
   app:
     build:
@@ -23,7 +24,7 @@ services:
       DB_USER: nodepass
       DB_PASSWORD: ${DB_PASSWORD:?Generate a database password}
       TRUST_PROXY: "1"
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the isolated ingress CIDR}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-dokploy-traefik}
     volumes: [nodepass-data:/app/data]
     depends_on:
       db:

@@ -12,6 +12,7 @@ import * as OTPAuth from "otpauth";
 import bcrypt from "bcryptjs";
 import { bounded } from "../packages/server/src/security/password.js";
 import { createHmac } from "node:crypto";
+import { Resolver } from "node:dns/promises";
 import { harness } from "./harness.js";
 import {
   Auth,
@@ -493,6 +494,34 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         .where({ id: directoryAuth.session.id })
         .first();
       expect(dirSession).toBeDefined();
+    });
+    it("rechecks named SSO ingress after DNS changes and failures", async () => {
+      const resolve4 = vi
+        .spyOn(Resolver.prototype, "resolve4")
+        .mockResolvedValue(["127.0.0.1"]);
+      const resolve6 = vi
+        .spyOn(Resolver.prototype, "resolve6")
+        .mockResolvedValue([]);
+      const auth = new Auth(
+        r.db,
+        { ...r.config, trustProxy: true, trustedProxies: ["dokploy-traefik"] },
+        r.vault,
+      );
+      const config = vi
+        .spyOn(r.vault, "configuration")
+        .mockResolvedValue({ enabled: false });
+      try {
+        await expect(auth.sso(context().ctx)).rejects.toThrow("disabled");
+        resolve4.mockResolvedValue(["127.0.0.2"]);
+        await expect(auth.sso(context().ctx)).rejects.toThrow("ingress");
+        resolve4.mockRejectedValue(new Error("ENOTFOUND"));
+        await expect(auth.sso(context().ctx)).rejects.toThrow("ingress");
+        expect(config).toHaveBeenCalledTimes(1);
+      } finally {
+        config.mockRestore();
+        resolve4.mockRestore();
+        resolve6.mockRestore();
+      }
     });
     it("verifies signed SSO assertions, explicit account mapping, one-use nonce and safe provisioning", async () => {
       const auth = new Auth(

@@ -64,6 +64,8 @@
     "rtk:check:publication": "rtk npm run check:publication",
     "check:compose": "node scripts/check-compose.mjs",
     "rtk:check:compose": "rtk npm run check:compose",
+    "deploy:dokploy": "node scripts/dokploy-template.mjs",
+    "rtk:deploy:dokploy": "rtk npm run deploy:dokploy",
     "check:release": "node scripts/check-release.mjs",
     "rtk:check:release": "rtk npm run check:release",
     "release:version": "node scripts/release-version.mjs",

@@ -1,0 +1,23 @@
+# Used only when importing a new installation. Reimporting regenerates secrets.
+# The Base64 helper uses cryptographically random bytes for every secret.
+[variables]
+main_domain = "${domain}"
+deployment_key = "${base64:32}"
+setup_token = "${base64:48}"
+db_password = "${base64:48}"
+db_root_password = "${base64:48}"
+
+[config]
+env = [
+  "PUBLIC_URL=https://${main_domain}",
+  "DEPLOYMENT_KEY=${deployment_key}",
+  "SETUP_TOKEN=${setup_token}",
+  "DB_PASSWORD=${db_password}",
+  "DB_ROOT_PASSWORD=${db_root_password}",
+  "TRUSTED_PROXIES=dokploy-traefik",
+]
+
+[[config.domains]]
+serviceName = "app"
+port = 3000
+host = "${main_domain}"

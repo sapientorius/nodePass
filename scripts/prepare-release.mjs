@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
+import { dokployImport } from "./dokploy-template.mjs";
 import { validateReleaseSecurity } from "../packages/contracts/src/updates.ts";
 import {
   checkVersions,
@@ -47,6 +48,7 @@ export async function prepareRelease(root, identity, context) {
   }
   for (const file of [
     ".env.example",
+    "dokploy.toml",
     "COPYING",
     "NOTICE.md",
     "CHANGELOG.md",
@@ -55,6 +57,10 @@ export async function prepareRelease(root, identity, context) {
     "docker-compose.existing.yml",
   ])
     await cp(join(root, file), join(deployment, file));
+  await writeFile(
+    join(deployment, "dokploy-import.b64"),
+    await dokployImport(root, reference),
+  );
   await cp(
     join(root, ".github/rulesets"),
     join(deployment, ".github/rulesets"),
