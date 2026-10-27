@@ -24,6 +24,8 @@ Unexpected errors omit database credentials, stacks, keys and decrypted contents
 
 Sharing links require an active completed session and account/password/sharing rights. Creating a link, like reading an individual password, does not require additional five-minute reauthentication. Required MFA, session expiry, CSRF/origin, privacy, retrieval/expiry limits and audit still apply. Other sensitive operations, including recovery-code and API-token management, retain their additional confirmation requirements.
 
+Group-private accounts require the user's primary group even for administrators. Secondary group access can expand explicit group grants only for non-private accounts; changing this setting requires a recent application-administrator session and is audited. Historical metadata and password access additionally enforce each snapshot's original ownership, group and privacy restrictions. See [account permissions](COMPATIBILITY.md#account-permissions).
+
 ## Browser and network
 
 Browser assets are local. CORS is closed and the UI does not render user HTML. `script-src 'self'` permits bundled scripts only: inline scripts and `eval` are not allowed. Frames, external images/fonts and foreign connections are restricted. Secrets are excluded from list responses and authentication credentials are not placed in Local Storage. Explicit password display is time-limited.

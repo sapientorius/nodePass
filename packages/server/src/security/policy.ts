@@ -42,28 +42,30 @@ const profileFlags: Record<AccountAction, string> = {
 };
 export const isAdmin = (user: Principal): boolean =>
   user.isAdminApp === 1 || user.isAdminAcc === 1;
+export function hasAccountCapability(
+  user: Principal,
+  action: AccountAction,
+): boolean {
+  return (
+    user.isDisabled !== 1 &&
+    (isAdmin(user) ||
+      user.profile[profileFlags[action]] === true ||
+      user.profile[profileFlags[action]] === 1)
+  );
+}
 export function can(
   user: Principal,
   action: AccountAction,
   account?: ProtectedAccount,
   fullGroupAccess = false,
 ): boolean {
-  if (user.isDisabled === 1) return false;
-  if (!(
-    isAdmin(user) ||
-    user.profile[profileFlags[action]] === true ||
-    user.profile[profileFlags[action]] === 1
-  ))
-    return false;
+  if (!hasAccountCapability(user, action)) return false;
   if (action === "create") return true;
   if (!account) return false;
-  // Private flags always constrain even application administrators, matching search privacy semantics.
+  // Match sysPass search privacy, including administrator exclusions. Additional
+  // memberships never override a group-private account's primary-group boundary.
   if (account.isPrivate === 1 && account.userId !== user.id) return false;
-  if (
-    account.isPrivateGroup === 1 &&
-    account.userGroupId !== user.userGroupId &&
-    !user.groups.includes(account.userGroupId)
-  )
+  if (account.isPrivateGroup === 1 && account.userGroupId !== user.userGroupId)
     return false;
   let view = false,
     edit = false;

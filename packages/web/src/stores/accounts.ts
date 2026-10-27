@@ -19,6 +19,7 @@ export const useAccounts = defineStore("accounts", {
     categoryId: null as number | null,
     clientId: null as number | null,
     tag: null as string | null,
+    privateOnly: false,
     sort: "name" as AccountSortField,
     sortDirection: "asc" as "asc" | "desc",
     favorite: false,
@@ -45,6 +46,7 @@ export const useAccounts = defineStore("accounts", {
       q.set("sort", this.sort);
       q.set("direction", this.sortDirection);
       if (this.favorite) q.set("favorite", "true");
+      if (this.privateOnly) q.set("privateOnly", "true");
       try {
         const result = await api<Page<Account>>(`accounts?${q}`);
         if (this.revision === revision) {
@@ -72,6 +74,7 @@ export const useAccounts = defineStore("accounts", {
       this.categoryId = null;
       this.clientId = null;
       this.tag = null;
+      this.privateOnly = false;
       this.sort = "name";
       this.sortDirection = "asc";
       this.page = 1;

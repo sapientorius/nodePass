@@ -65,6 +65,8 @@ export default defineComponent({
     groups: [] as any[],
     profiles: [] as any[],
     policy: { ...defaultPolicy },
+    accountAccess: { fullGroupAccess: false },
+    accountAccessLoaded: false,
     backupName: "",
     legacyEvents: false,
     flags: [
@@ -293,8 +295,14 @@ export default defineComponent({
     },
     async load() {
       await this.run(async () => {
-        if (this.section === "security") this.policy = await api("security");
-        else if (
+        if (this.section === "security") {
+          this.accountAccessLoaded = false;
+          [this.policy, this.accountAccess] = await Promise.all([
+            api("security"),
+            api("account-access"),
+          ]);
+          this.accountAccessLoaded = true;
+        } else if (
           ![
             "backups",
             "transfer",
@@ -394,6 +402,17 @@ export default defineComponent({
           minLength: this.policy.minLength,
           minScore: this.policy.minScore,
         };
+      });
+    },
+    async saveAccountAccess() {
+      if (this.busy || !this.accountAccessLoaded) return;
+      await this.run(async () => {
+        this.accountAccess = await api(
+          "account-access",
+          "PATCH",
+          this.accountAccess,
+        );
+        this.message.success(this.$t("saved"), { duration: 3000 });
       });
     },
     async backup() {
@@ -527,7 +546,32 @@ export default defineComponent({
         ><n-button type="primary" attr-type="submit" :loading="busy">{{
           $t("save")
         }}</n-button></n-form
-      ></n-card
+      >
+      <h2>{{ $t("accountAccessTitle") }}</h2>
+      <n-form label-placement="top" @submit.prevent="saveAccountAccess">
+        <n-form-item :label="$t('secondaryGroupAccess')">
+          <n-switch
+            v-model:value="accountAccess.fullGroupAccess"
+            :aria-label="$t('secondaryGroupAccess')"
+            :aria-disabled="busy || !accountAccessLoaded"
+            aria-describedby="secondary-group-help private-group-help"
+            :disabled="busy || !accountAccessLoaded"
+          />
+        </n-form-item>
+        <p id="secondary-group-help" class="muted">
+          {{ $t("secondaryGroupAccessHelp") }}
+        </p>
+        <p id="private-group-help" class="muted">
+          {{ $t("privateGroupAccessHelp") }}
+        </p>
+        <n-button
+          type="primary"
+          attr-type="submit"
+          :loading="busy"
+          :disabled="!accountAccessLoaded"
+          >{{ $t("save") }}</n-button
+        >
+      </n-form></n-card
     >
     <n-card v-else-if="section === 'backups'" class="settings-card"
       ><div class="backup-illustration"><Icon name="shield" :size="48" /></div>
@@ -711,6 +755,26 @@ export default defineComponent({
   </section>
 </template>
 <style scoped>
+.settings-card h2 {
+  margin: 28px 0 20px;
+}
+@media (max-width: 600px) {
+  .settings-card :deep(.n-form-item) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .settings-card :deep(.n-form-item-label) {
+    width: auto !important;
+    max-width: none;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 0 0 8px;
+  }
+  .settings-card :deep(.n-form-item-blank) {
+    min-width: 0;
+  }
+}
 .user-group-label {
   display: inline-flex;
   align-items: center;

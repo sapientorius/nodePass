@@ -2,6 +2,29 @@
 
 Versions before 1.0 may include breaking changes in minor releases. Patch releases contain compatible fixes. Release candidates are intended for evaluation with synthetic data or a separate representative copy.
 
+## [0.1.3]
+
+### Added
+
+- The account overview has an **Only me** filter for the current user's private accounts. It works with search, categories, customers, tags, favorites and both account views, with filtering applied before totals and pagination.
+- Application administrators can inspect and change secondary-group access under **Security → Account access**, with translated guidance in all 14 supported languages. Changes require recent authentication and are audited.
+
+### Security
+
+- **NP-2026-001:** Group-private accounts now require membership through the user's primary group, including for administrators. Additional group memberships no longer override this privacy boundary. New and edited group-private accounts must use the acting user's primary group.
+- **NP-2026-002:** Password history now enforces each historical record's original owner, group and privacy restrictions in addition to current account permissions. Unauthorized history entries are excluded before the result limit and cannot be revealed or restored.
+- Both corrections affect releases from `0.1.0-rc.1` through `0.1.2`; `release-security.json` records `0.1.3` as the fixed version for update notifications.
+
+### Fixed
+
+- Account list permissions and direct account access use consistent capability and privacy checks before counting and pagination.
+
+### Compatibility and upgrade notes
+
+- Existing secrets, persistent volumes and database schema are preserved. Back up the database and required historical keys before updating to the release's verified image digest.
+- Access through secondary groups may become more restrictive for group-private accounts and historical records. Review the [account permission rules](docs/COMPATIBILITY.md#account-permissions) when upgrading.
+- The migrated sysPass `accountFullGroupAccess` setting remains effective and can now be managed in the interface. It expands explicit group grants for non-private accounts only; privacy and profile permissions still apply.
+
 ## [0.1.2]
 
 ### Fixed

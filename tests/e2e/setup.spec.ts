@@ -15,7 +15,7 @@ async function openSetup(page: Page, legacy = false) {
   );
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    "Dein Tresor beginnt hier.",
+    "nodePass einrichten",
   );
 }
 
