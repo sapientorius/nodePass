@@ -2,6 +2,21 @@
 
 Versions before 1.0 may include breaking changes in minor releases. Patch releases contain compatible fixes. Release candidates are intended for evaluation with synthetic data or a separate representative copy.
 
+## [0.1.2]
+
+### Fixed
+
+- Coolify and Dokploy repository templates now pull a verified published image instead of requiring a local Dockerfile. Pasting the Coolify definition into a Docker Compose Empty Service no longer fails with `failed to read dockerfile: open Dockerfile: no such file or directory`.
+- Intentional source builds use the explicit `docker-compose.build.yml` override from a real repository checkout.
+- Deployment checks reject accidental source-build requirements in platform templates, and installation instructions distinguish pasted Services from Git-based builds.
+
+### Compatibility and upgrade notes
+
+- Use `docker-compose.coolify.yml` or the Dokploy import from this release's deployment archive to deploy the exact 0.1.2 image. The archive pins the image produced and verified by this release's workflow.
+- When fixing an existing Coolify Service, preserve its environment values, service names and persistent volumes. Remove the old `app.build` block and use the release image instead; no secret regeneration or database reset is required.
+- No database schema change is introduced. Preserve deployment keys, setup tokens and database credentials across updates.
+- `release-security.json` records no publicly disclosed security corrections for this release; no independent security audit is claimed.
+
 ## [0.1.1]
 
 ### Changed
