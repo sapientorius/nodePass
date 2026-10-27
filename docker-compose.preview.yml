@@ -30,7 +30,7 @@ services:
       db:
         condition: service_healthy
   db:
-    image: mariadb:11.8@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+    image: mariadb:12.2@sha256:6a4c4bbf0447c2247801309513fcc0dd17c3f35390368139ce419387fdd1144d
     environment:
       MARIADB_DATABASE: nodepass_preview
       MARIADB_USER: nodepass_preview
