@@ -19,6 +19,7 @@ import {
 import { validateHosting } from "../scripts/check-release-hosting.mjs";
 import { allowTag, existingRegistryDigest } from "../scripts/publish-image.mjs";
 import { prepareRelease } from "../scripts/prepare-release.mjs";
+import { validateReleaseSecurity } from "../packages/contracts/src/updates.js";
 import YAML from "yaml";
 
 const directories: string[] = [],
@@ -154,6 +155,7 @@ describe("release OCI integrity and tested-image identity", () => {
       architecture?: string;
       revision?: string;
       manifestType?: string;
+      version?: string;
     } = {},
   ) {
     const directory = await temporary();
@@ -166,7 +168,7 @@ describe("release OCI integrity and tested-image identity", () => {
       await writeFile(join(directory, "blobs/sha256", hash), bytes);
       return { digest: `sha256:${hash}`, size: bytes.length };
     }
-    const identity = releaseIdentity("0.1.0-rc.1", commit);
+    const identity = releaseIdentity(options.version ?? "0.1.0-rc.1", commit);
     const config = await blob({
       os: "linux",
       architecture: options.architecture ?? "amd64",
@@ -197,7 +199,8 @@ describe("release OCI integrity and tested-image identity", () => {
     return { directory, identity, config, layer, descriptor };
   }
   it("packages the Dokploy importer with the exact verified release image and no generated secrets", async () => {
-    const f = await fixture(),
+    const version = await checkVersions(process.cwd()),
+      f = await fixture({ version }),
       root = await temporary();
     await cp(f.directory, join(root, ".cache/release/oci"), {
       recursive: true,
@@ -249,6 +252,13 @@ describe("release OCI integrity and tested-image identity", () => {
       attempt: "1",
       url: "https://example.test/verification",
     });
+    expect(result.manifest.version).toBe(version);
+    expect(result.manifest.security).toEqual(
+      validateReleaseSecurity(
+        JSON.parse(await readFile(resolve("release-security.json"), "utf8")),
+        version,
+      ),
+    );
     const archive = join(
       root,
       `.cache/release/assets/nodepass-${f.identity.version}-deploy.tar.gz`,
