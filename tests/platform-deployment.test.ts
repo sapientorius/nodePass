@@ -6,6 +6,21 @@ import { dokployImport } from "../scripts/dokploy-template.mjs";
 import { loadConfig } from "../packages/server/src/config.js";
 
 describe("platform deployment bootstrap", () => {
+  it.each(["coolify", "dokploy"])(
+    "can paste the %s platform template without a checkout or Dockerfile",
+    async (platform) => {
+      const compose = YAML.parse(
+        await readFile(`docker-compose.${platform}.yml`, "utf8"),
+      );
+      expect(compose.services.app.build).toBeUndefined();
+      expect(compose.services.app.image).toMatch(
+        /^\$\{NODEPASS_IMAGE:-ghcr\.io\/sapientorius\/nodepass@sha256:[a-f0-9]{64}\}$/,
+      );
+      expect(compose.services.app.platform).toBe("linux/amd64");
+      expect(compose.services.app.volumes).toEqual(["nodepass-data:/app/data"]);
+    },
+  );
+
   it("uses Coolify's true 32-byte Base64 generator and persistent shared DB credentials", async () => {
     const compose = YAML.parse(
       await readFile("docker-compose.coolify.yml", "utf8"),

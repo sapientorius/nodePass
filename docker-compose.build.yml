@@ -1,0 +1,9 @@
+# Source checkout only. Apply after the Coolify or Dokploy Compose file.
+# Docker Compose Empty has no source checkout; use its default published image.
+services:
+  app:
+    image: nodepass:local
+    pull_policy: build
+    build:
+      context: .
+      target: production

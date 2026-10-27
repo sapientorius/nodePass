@@ -30,6 +30,8 @@ for (const files of [
   ["docker-compose.yml", "docker-compose.release.yml"],
   ["docker-compose.coolify.yml", "docker-compose.release.yml"],
   ["docker-compose.dokploy.yml", "docker-compose.release.yml"],
+  ["docker-compose.coolify.yml", "docker-compose.build.yml"],
+  ["docker-compose.dokploy.yml", "docker-compose.build.yml"],
   [
     "docker-compose.yml",
     "docker-compose.release.yml",
@@ -71,6 +73,7 @@ for (const files of [
   });
   const config = JSON.parse(output),
     app = config.services.app;
+  const sourceBuild = files.includes("docker-compose.build.yml");
   if (platform) {
     const coolify = files.includes("docker-compose.coolify.yml");
     if (
@@ -94,6 +97,23 @@ for (const files of [
           env.SERVICE_PASSWORD_64_NODEPASSDBROOT)
     )
       throw new Error("Coolify must reuse its persistent generated secrets");
+    if (
+      !sourceBuild &&
+      (app.build ||
+        app.image !== env.NODEPASS_IMAGE ||
+        app.platform !== "linux/amd64")
+    )
+      throw new Error(
+        "Platform services must pull a pinned image without a source checkout",
+      );
+    if (
+      sourceBuild &&
+      (app.image !== "nodepass:local" ||
+        app.pull_policy !== "build" ||
+        !app.build ||
+        app.build.target !== "production")
+    )
+      throw new Error("Source builds require the explicit build override");
   }
   if (
     files.includes("docker-compose.release.yml") &&

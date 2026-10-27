@@ -99,7 +99,11 @@ Back up `secrets/deployment-key` separately from encrypted backups. Setup change
 
 ## Coolify
 
-Use `docker-compose.coolify.yml` with build context **`.`** at the repository root. Assign the HTTPS domain to service **app**, port **3000**, through Coolify's domain configuration. Set `PUBLIC_URL` to that exact origin.
+Create a **Docker Compose Empty** Service and paste `docker-compose.coolify.yml` into **Edit Compose File**. The repository template pulls the verified published **0.1.1** image by digest; it needs no Git checkout, Dockerfile or build context. Release archives contain the matching release's image instead. Set `NODEPASS_IMAGE` only when selecting another verified release digest.
+
+Assign the HTTPS domain to service **app**, port **3000**, through Coolify's domain configuration. Set `PUBLIC_URL` to that exact origin.
+
+If an existing Service reports `failed to read dockerfile: open Dockerfile: no such file or directory`, it has the earlier source-build template. Replace only `app.build` with the `image` and `platform` entries from this template, preserving all saved environment values, service names and volumes, then redeploy. A Docker Compose Empty Service stores the YAML but does not check out repository sources.
 
 For a **new installation**, Coolify generates and persists these values when it parses the Compose definition:
 
@@ -115,6 +119,8 @@ Read the setup token from Coolify's protected Environment Variables page when op
 **Existing installations:** before adopting this template, copy the existing `DEPLOYMENT_KEY`, `SETUP_TOKEN`, `DB_PASSWORD` and `DB_ROOT_PASSWORD` into the corresponding `SERVICE_*` variables above. Preserve their exact values; newly generated replacements cannot unlock existing data or change an initialized MariaDB password automatically.
 
 This variant publishes no app or database host ports. Configure DNS/TLS in Coolify and validate proxy headers/name resolution in your own deployment. See [Coolify's generated Compose values](https://coolify.io/docs/applications/builds/docker-compose) and [networking](https://coolify.io/docs/core/networking-in-coolify).
+
+For an intentional **source build**, create a Git-based Docker Compose **Application** with the repository root as its base directory. Combine `docker-compose.coolify.yml` followed by `docker-compose.build.yml`; both files and the Dockerfile must be present in the checkout. The override explicitly builds a local image. Pasting the source-build override into Docker Compose Empty cannot work.
 
 ## Dokploy
 
@@ -133,11 +139,13 @@ From a source checkout, create an import payload for an already published and ve
 npm run --silent deploy:dokploy -- ghcr.io/sapientorius/nodepass@sha256:REPLACE_WITH_VERIFIED_DIGEST
 ```
 
-For Git-based source builds, use `docker-compose.dokploy.yml` with context **`.`** and provision the four secrets in Dokploy's environment settings (`DEPLOYMENT_KEY`, `SETUP_TOKEN`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`). Simply loading that YAML does not run template generators.
+The repository's `docker-compose.dokploy.yml` also pulls the verified published 0.1.1 image by default and works without source files. When using that YAML directly, provision the four secrets in Dokploy's environment settings (`DEPLOYMENT_KEY`, `SETUP_TOKEN`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`); template generators run only through import.
+
+For intentional Git-based source builds, combine `docker-compose.dokploy.yml` followed by `docker-compose.build.yml`, with context **`.`** at the repository root. The override requires a real source checkout containing the Dockerfile.
 
 `TRUSTED_PROXIES` defaults to `dokploy-traefik`; fixed proxy IPs are unnecessary. Dokploy adds ingress labels/networking for configured domains. Redeploy after domain changes; give the database no domain or published port.
 
-Docker Swarm requires an already built, pinned image instead of `build:`. Validate the actual platform domain, ingress network and secret persistence. See [Dokploy's domain documentation](https://docs.dokploy.com/docs/core/docker-compose/domains).
+This template targets Docker Compose, not Docker Swarm stacks. Validate the actual platform domain, ingress network and secret persistence. See [Dokploy's domain documentation](https://docs.dokploy.com/docs/core/docker-compose/domains).
 
 ## Verify installation
 
