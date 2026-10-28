@@ -13,16 +13,14 @@ import {
   NPopconfirm,
   NTag,
 } from "naive-ui";
-import {
-  startAuthentication,
-  startRegistration,
-} from "@simplewebauthn/browser";
+import { startRegistration } from "@simplewebauthn/browser";
 import { api } from "../api";
 import { useSession } from "../stores/session";
 import { useAccounts } from "../stores/accounts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import PasswordStrength from "../components/PasswordStrength.vue";
+import ConfirmationForm from "../components/ConfirmationForm.vue";
 import NCard from "../components/PanelCard.vue";
 export default defineComponent({
   setup() {
@@ -42,13 +40,13 @@ export default defineComponent({
     Icon,
     PageAccent,
     PasswordStrength,
+    ConfirmationForm,
   },
   data: () => ({
     busy: false,
     factors: [] as any[],
     enrollment: null as any,
     code: "",
-    password: "",
     current: "",
     next: "",
     codes: [] as string[],
@@ -61,13 +59,13 @@ export default defineComponent({
   beforeUnmount() {
     this.codes = [];
     this.enrollment = null;
-    this.password = "";
     this.current = "";
     this.next = "";
     this.code = "";
   },
   methods: {
     async run(job: () => Promise<void>) {
+      if (this.busy) return;
       this.busy = true;
       try {
         await job();
@@ -83,25 +81,18 @@ export default defineComponent({
         this.sessionStore.passwordPolicy = await api("auth/policy");
       });
     },
-    async passkey(register: boolean) {
+    async passkey() {
       await this.run(async () => {
-        const data = await api(
-            `auth/passkey/${register ? "register" : "login"}-options`,
-            "POST",
-            {},
-          ),
-          response = register
-            ? await startRegistration({ optionsJSON: data.options })
-            : await startAuthentication({ optionsJSON: data.options });
+        const data = await api("auth/passkey/register-options", "POST", {}),
+          response = await startRegistration({ optionsJSON: data.options });
         this.sessionStore.accept(
-          await api(`auth/passkey/${register ? "register" : "login"}`, "POST", {
+          await api("auth/passkey/register", "POST", {
             challenge: data.challenge,
             response,
           }),
         );
         this.confirmed = true;
-        if (register)
-          this.message.success(this.$t("saved"), { duration: 3000 });
+        this.message.success(this.$t("saved"), { duration: 3000 });
         this.factors = await api("auth/factors");
       });
     },
@@ -130,13 +121,6 @@ export default defineComponent({
         this.enrollment = null;
         this.confirmed = true;
         this.factors = await api("auth/factors");
-      });
-    },
-    async confirmPassword() {
-      await this.run(async () => {
-        await api("auth/confirm", "POST", { password: this.password });
-        this.password = "";
-        this.confirmed = true;
       });
     },
     async recovery() {
@@ -183,34 +167,12 @@ export default defineComponent({
       }}</n-tag>
     </div>
     <div class="settings-grid">
-      <n-card :title="$t('confirm')"
-        ><n-form
-          @submit.prevent="factors.length ? confirmTotp() : confirmPassword()"
-          ><n-form-item :label="$t(factors.length ? 'code' : 'password')"
-            ><n-input
-              :input-props="{
-                'aria-label': $t(factors.length ? 'code' : 'password'),
-              }"
-              v-if="factors.length"
-              v-model:value="code"
-              autocomplete="one-time-code"
-              :maxlength="100" /><n-input
-              :input-props="{
-                'aria-label': $t(factors.length ? 'code' : 'password'),
-              }"
-              v-else
-              v-model:value="password"
-              type="password"
-              autocomplete="current-password"
-          /></n-form-item>
-          <div class="detail-actions">
-            <n-button type="primary" attr-type="submit" :loading="busy">{{
-              $t("confirm")
-            }}</n-button
-            ><n-button @click="passkey(false)">{{ $t("passkey") }}</n-button>
-          </div></n-form
-        ></n-card
-      >
+      <n-card :title="$t('confirm')">
+        <ConfirmationForm
+          :key="factors.map((factor) => factor.id).join(',')"
+          @confirmed="confirmed = true"
+        />
+      </n-card>
       <n-card :title="$t('mfa')"
         ><n-list
           ><n-list-item v-for="factor in factors" :key="factor.id"
@@ -228,7 +190,7 @@ export default defineComponent({
           ></n-list
         >
         <div class="detail-actions">
-          <n-button @click="passkey(true)"
+          <n-button @click="passkey()"
             ><template #icon><Icon name="key" /></template>{{ $t("enroll") }} ·
             Passkey</n-button
           ><n-button

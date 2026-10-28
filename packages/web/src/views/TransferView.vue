@@ -96,6 +96,7 @@ export default defineComponent({
       this.result = null;
     },
     async inspect() {
+      if (this.busy) return;
       this.result = null;
       await this.run(async () => {
         this.preview = await api("import/preview", "POST", {
@@ -108,6 +109,7 @@ export default defineComponent({
       });
     },
     async commit() {
+      if (this.busy) return;
       this.result = null;
       await this.run(async () => {
         this.result = (
@@ -123,6 +125,7 @@ export default defineComponent({
       });
     },
     async exportFile() {
+      if (this.busy) return;
       await this.run(async () => {
         await download("export", {
           format: this.format,

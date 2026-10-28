@@ -1,3 +1,11 @@
+import {
+  actionRevision,
+  assertAction,
+  cancelConfirmation,
+  confirmAction,
+  confirmationRevision,
+} from "./confirmation";
+
 let csrf = "";
 let sessionRevision = 0;
 export interface ApiFailure {
@@ -16,7 +24,10 @@ export class ApiError extends Error {
   }
 }
 export function setCsrf(value: string): void {
-  if (value !== csrf) sessionRevision++;
+  if (value !== csrf) {
+    sessionRevision++;
+    cancelConfirmation();
+  }
   csrf = value;
 }
 async function request(
@@ -25,17 +36,30 @@ async function request(
   data?: unknown,
   headers: Record<string, string> = {},
 ): Promise<Response> {
-  const response = await fetch(`/api/v1/${path}`, {
-    method,
-    credentials: "same-origin",
-    headers: {
-      ...(data !== undefined ? { "content-type": "application/json" } : {}),
-      ...(csrf ? { "x-csrf-token": csrf } : {}),
-      ...headers,
-    },
-    ...(data !== undefined ? { body: JSON.stringify(data) } : {}),
-  });
-  if (!response.ok) {
+  const revision = actionRevision();
+  const session = sessionRevision;
+  const verified = confirmationRevision();
+  // Capture the exact submitted body once, before the dialog can pause this action.
+  const body = data === undefined ? undefined : JSON.stringify(data);
+  const submittedHeaders = { ...headers };
+  const send = () =>
+    fetch(`/api/v1/${path}`, {
+      method,
+      credentials: "same-origin",
+      headers: {
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(csrf ? { "x-csrf-token": csrf } : {}),
+        ...submittedHeaders,
+      },
+      ...(body !== undefined ? { body } : {}),
+    });
+  for (let attempt = 0; ; attempt++) {
+    assertAction(revision);
+    const response = await send();
+    assertAction(revision);
+    if (session !== sessionRevision)
+      throw new Error("Session changed; request discarded");
+    if (response.ok) return response;
     if (response.status === 401)
       window.dispatchEvent(new Event("nodepass-expired"));
     let failure: ApiFailure = { message: "Request failed" };
@@ -45,9 +69,18 @@ async function request(
     } catch {
       /* Do not expose server error bodies. */
     }
+    assertAction(revision);
+    if (
+      attempt === 0 &&
+      response.status === 403 &&
+      failure.code === "REAUTHENTICATION_REQUIRED" &&
+      !/^auth\/confirm(?:\/|$)/.test(path)
+    ) {
+      if (verified === confirmationRevision()) await confirmAction();
+      continue;
+    }
     throw new ApiError(failure, response.status);
   }
-  return response;
 }
 export async function api<T = any>(
   path: string,
@@ -56,17 +89,25 @@ export async function api<T = any>(
   headers: Record<string, string> = {},
 ): Promise<T> {
   const revision = sessionRevision;
+  const context = actionRevision();
   const response = await request(path, method, data, headers);
   const result =
     response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+  assertAction(context);
   if (revision !== sessionRevision)
     throw new Error("Session changed; request discarded");
   return result;
 }
-export async function download(path: string, data: unknown): Promise<void> {
-  const response = await request(path, "POST", data),
-    blob = await response.blob(),
-    url = URL.createObjectURL(blob),
+export async function download(
+  path: string,
+  data?: unknown,
+  method = "POST",
+): Promise<void> {
+  const revision = actionRevision();
+  const response = await request(path, method, data),
+    blob = await response.blob();
+  assertAction(revision);
+  const url = URL.createObjectURL(blob),
     anchor = document.createElement("a");
   anchor.href = url;
   anchor.download =

@@ -137,6 +137,7 @@ export default defineComponent({
       return rows.map((r) => ({ label: r.name, value: String(r.id) }));
     },
     async save() {
+      if (this.busy) return;
       this.saved = false;
       await this.run(async () => {
         const data: any = {};
@@ -152,6 +153,7 @@ export default defineComponent({
       });
     },
     async test() {
+      if (this.busy) return;
       this.saved = false;
       await this.run(async () => {
         await api("integrations/smtp/test", "POST", {});

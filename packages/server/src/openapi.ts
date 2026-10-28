@@ -35,6 +35,7 @@ export function openApi(
     for (const method of route.methods) {
       if (["HEAD", "OPTIONS"].includes(method)) continue;
       const write = !["GET", "HEAD"].includes(method),
+        confirmation = path === "/api/v1/auth/confirm",
         account =
           path === "/api/v1/accounts" || path === "/api/v1/accounts/{id}";
       item[method.toLowerCase()] = {
@@ -60,9 +61,47 @@ export function openApi(
                 required: true,
                 content: {
                   "application/json": {
-                    schema: account
-                      ? { $ref: "#/components/schemas/AccountInput" }
-                      : { type: "object", additionalProperties: true },
+                    schema: confirmation
+                      ? {
+                          oneOf: [
+                            {
+                              type: "object",
+                              required: ["password"],
+                              properties: {
+                                password: {
+                                  type: "string",
+                                  minLength: 1,
+                                  maxLength: 4096,
+                                },
+                              },
+                              additionalProperties: false,
+                            },
+                            {
+                              type: "object",
+                              required: ["code"],
+                              properties: {
+                                code: {
+                                  type: "string",
+                                  minLength: 1,
+                                  maxLength: 100,
+                                },
+                              },
+                              additionalProperties: false,
+                            },
+                            {
+                              type: "object",
+                              required: ["challenge", "response"],
+                              properties: {
+                                challenge: { type: "string" },
+                                response: { type: "object" },
+                              },
+                              additionalProperties: false,
+                            },
+                          ],
+                        }
+                      : account
+                        ? { $ref: "#/components/schemas/AccountInput" }
+                        : { type: "object", additionalProperties: true },
                   },
                 },
               },
@@ -76,7 +115,8 @@ export function openApi(
           "400": { description: "Input validation failed" },
           "401": { description: "Authentication required" },
           "403": {
-            description: "Operation denied or MFA/reconfirmation required",
+            description:
+              "Operation denied or MFA required. REAUTHENTICATION_REQUIRED requests confirmation of the current session; CONFIRMATION_INVALID rejects confirmation credentials without ending the session.",
           },
           "404": { description: "Resource unavailable" },
           "409": { description: "Version conflict" },

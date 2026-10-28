@@ -22,6 +22,8 @@ import { languageOptions } from "./i18n";
 import Icon from "./components/Icon.vue";
 import LoginView from "./views/LoginView.vue";
 import UpdateNotice from "./components/UpdateNotice.vue";
+import ConfirmationModal from "./components/ConfirmationModal.vue";
+import { cancelConfirmation } from "./confirmation";
 import { uiLocales, dateLocales } from "./ui-locale";
 import type { Language, UpdateStatus } from "@nodepass/contracts";
 import { api, setCsrf } from "./api";
@@ -42,6 +44,7 @@ export default defineComponent({
     Icon,
     LoginView,
     UpdateNotice,
+    ConfirmationModal,
   },
   data: () => ({
     languageOptions,
@@ -160,7 +163,8 @@ export default defineComponent({
         document.documentElement.dataset.theme = theme;
       },
     },
-    "$route.path"() {
+    "$route.fullPath"() {
+      if (!this.sessionStore.booting) cancelConfirmation();
       this.mobileOpen = false;
     },
   },
@@ -179,6 +183,7 @@ export default defineComponent({
   },
   methods: {
     expired() {
+      cancelConfirmation();
       setCsrf("");
       this.sessionStore.viewer = null;
       this.accountsStore.clear();
@@ -260,6 +265,9 @@ export default defineComponent({
           class="app-root"
           :class="{ 'is-dark': sessionStore.theme === 'dark' }"
         >
+          <ConfirmationModal
+            v-if="sessionStore.viewer?.phase === 'ready' && !publicRoute"
+          />
           <div v-if="sessionStore.booting" class="boot">
             <img src="/logo.svg" alt="nodePass" width="64" height="64" /><n-spin
               size="large"

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import type { Viewer } from "@nodepass/contracts";
 import { api, setCsrf } from "../api";
+import { ActionCancelled, cancelConfirmation } from "../confirmation";
 export const useSession = defineStore("session", {
   state: () => ({
     viewer: null as (Viewer & { phase: string }) | null,
@@ -49,6 +50,7 @@ export const useSession = defineStore("session", {
       }
     },
     async logout() {
+      cancelConfirmation();
       await api("auth/logout", "POST", {});
       this.viewer = null;
       setCsrf("");
@@ -62,6 +64,7 @@ export const useSession = defineStore("session", {
         );
     },
     fail(error: unknown) {
+      if (error instanceof ActionCancelled) return;
       this.error = error instanceof Error ? error.message : String(error);
     },
   },

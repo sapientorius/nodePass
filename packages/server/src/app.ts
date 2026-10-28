@@ -237,6 +237,12 @@ export async function createApp(
           ctx.status < 500
             ? (e.message ?? "Request failed")
             : "The request could not be completed",
+        ...(error instanceof Forbidden &&
+        ["REAUTHENTICATION_REQUIRED", "CONFIRMATION_INVALID"].includes(
+          error.data?.code,
+        )
+          ? { code: error.data.code }
+          : {}),
       };
       if (ctx.status >= 500)
         console.error(
@@ -570,29 +576,17 @@ export async function createApp(
     requireReady();
     await auth.recovery(ctx);
   });
+  router.get("/api/v1/auth/confirm", async (ctx) => {
+    requireReady();
+    await auth.confirmationMethods(ctx);
+  });
   router.post("/api/v1/auth/confirm", async (ctx) => {
-    const p = await params(ctx),
-      id = p.identity!,
-      data = body(ctx);
-    exact(data, ["password"]);
-    const factors = await db("nodepass_factors")
-      .where({ userId: id.user.id, confirmed: 1 })
-      .first();
-    if (factors)
-      throw new Forbidden("Use your passkey or TOTP code to confirm");
-    const row = await db("User").where({ id: id.user.id }).first();
-    await auth.limit("confirm", String(id.user.id));
-    if (
-      !(await verifyPassword(
-        text(data, "password", 4096),
-        Buffer.from(row.pass).toString(),
-      ))
-    )
-      throw new Forbidden("Invalid credentials");
-    await db("nodepass_sessions")
-      .where({ id: id.session.id })
-      .update({ verifiedAt: Date.now() });
-    ctx.body = { confirmed: true };
+    requireReady();
+    await auth.confirm(ctx);
+  });
+  router.post("/api/v1/auth/confirm/passkey-options", async (ctx) => {
+    requireReady();
+    await auth.confirmationOptions(ctx);
   });
   router.get("/api/v1/auth/factors", async (ctx) => {
     const id = (await params(ctx)).identity!;

@@ -1,6 +1,6 @@
 # Operations
 
-[Documentation home](../README.md#documentation) · [Installation](INSTALLATION.md) · [Migration](MIGRATION.md)
+[Documentation home](../README.md#documentation) · [Installation](INSTALLATION.md) · [Updates and upgrades](UPGRADING.md) · [Migration](MIGRATION.md)
 
 ## Configuration and deployment boundaries
 
@@ -23,6 +23,8 @@ Reverse-proxy SSO additionally requires a random shared signing secret. The prox
 SMTP requires TLS with certificate validation. Syslog UDP sends sanitized events to the configured receiver; retries can produce duplicates and the local audit remains authoritative. Wiki calls use only the configured HTTPS endpoint, reject redirects and bound responses. Account URLs are never fetched for previews. Verify real network/certificate/permission behavior before release.
 
 ## Update notifications
+
+To install an update, follow [Updates and upgrades](UPGRADING.md), including release selection, platform-specific steps, backups and failure recovery.
 
 Application administrators can open **Versions & updates** at `/manage/updates`, also linked from update notices. The page shows the installed version, latest known version in the installation's Stable/RC channel, last successful check and expandable release information from the installed version onward. Reading or reopening the page uses the server cache and does not force a GitHub request. An unpublished installation version and an unknown latest version are explicitly identified.
 
@@ -90,7 +92,7 @@ Mount inputs read-only and make them readable only by app UID 65532. Keep sensit
 - For startup failures, check secret-file permissions, the deployment key, DB reachability and migration checksums. Do not print secret configuration.
 - For proxy-related 403 responses, verify `PUBLIC_URL`, immediate peer, `TRUSTED_PROXIES`, proxy DNS resolution from the app's network, HTTPS forwarding, Origin and CSRF. A missing/unresolvable proxy is denied until available. Do not bypass these checks by trusting every source.
 - A decryption error with a record ID requires investigating source data/historical keys; never replace it with empty data.
-- Before updating, test backup/restore, verify the exact commit/image and gate, restart in a maintenance window, then check readiness, authentication, permissions and secret access.
+- Follow [Updates and upgrades](UPGRADING.md) for the maintenance procedure, including Coolify/Dokploy image selection, backup/restore, startup migrations and post-update checks.
 - After an incomplete takeover, preserve the partial DB and restore the original backup separately before pointing sysPass at it. See [rollback](MIGRATION.md#verification-and-rollback).
 
 ## Release and hosting checks

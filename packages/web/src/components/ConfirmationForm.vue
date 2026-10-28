@@ -1,0 +1,258 @@
+<script lang="ts">
+import { defineComponent } from "vue";
+import {
+  NAlert,
+  NButton,
+  NForm,
+  NFormItem,
+  NInput,
+  NSpin,
+  type InputInst,
+} from "naive-ui";
+import {
+  startAuthentication,
+  WebAuthnAbortService,
+} from "@simplewebauthn/browser";
+import type {
+  ConfirmationMethod,
+  ConfirmationMethods,
+} from "@nodepass/contracts";
+import { api, ApiError } from "../api";
+import { ActionCancelled } from "../confirmation";
+
+export default defineComponent({
+  components: { NAlert, NButton, NForm, NFormItem, NInput, NSpin },
+  props: { cancellable: Boolean },
+  emits: ["confirmed", "cancel"],
+  data: () => ({
+    methods: [] as ConfirmationMethod[],
+    method: "password" as ConfirmationMethod,
+    value: "",
+    loading: true,
+    busy: false,
+    error: "",
+    revision: 0,
+    passkeyActive: false,
+  }),
+  computed: {
+    fieldLabel(): string {
+      return this.$t(
+        this.method === "password"
+          ? "password"
+          : this.method === "recovery"
+            ? "recoveryCodes"
+            : "code",
+      );
+    },
+  },
+  mounted() {
+    void this.load();
+  },
+  beforeUnmount() {
+    this.revision++;
+    this.value = "";
+    if (this.passkeyActive) WebAuthnAbortService.cancelCeremony();
+  },
+  methods: {
+    label(method: ConfirmationMethod): string {
+      return this.$t(
+        {
+          password: "password",
+          totp: "totp",
+          recovery: "recoveryCodes",
+          passkey: "confirmPasskey",
+        }[method],
+      );
+    },
+    async focusInput() {
+      await this.$nextTick();
+      if (this.method === "passkey")
+        (this.$el as HTMLElement)
+          .querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.focus();
+      else (this.$refs.credential as InputInst | undefined)?.focus();
+    },
+    select(method: ConfirmationMethod) {
+      this.method = method;
+      this.value = "";
+      this.error = "";
+      void this.focusInput();
+    },
+    async load() {
+      const revision = ++this.revision;
+      this.loading = true;
+      this.error = "";
+      try {
+        const { methods } = await api<ConfirmationMethods>("auth/confirm");
+        if (revision !== this.revision) return;
+        this.methods = methods;
+        this.method = methods.includes("totp")
+          ? "totp"
+          : (methods[0] ?? "password");
+        if (!methods.length) this.error = this.$t("confirmUnavailable");
+      } catch (error) {
+        if (revision !== this.revision || error instanceof ActionCancelled)
+          return;
+        this.error = this.$t("confirmLoadError");
+      } finally {
+        if (revision === this.revision) {
+          this.loading = false;
+          void this.focusInput();
+        }
+      }
+    },
+    async submit() {
+      if (
+        this.busy ||
+        this.loading ||
+        !this.methods.length ||
+        (this.method !== "passkey" && !this.value)
+      )
+        return;
+      const revision = this.revision;
+      this.busy = true;
+      this.error = "";
+      try {
+        if (this.method === "passkey") {
+          const data = await api("auth/confirm/passkey-options", "POST", {});
+          if (revision !== this.revision) return;
+          this.passkeyActive = true;
+          const response = await startAuthentication({
+            optionsJSON: data.options,
+          });
+          this.passkeyActive = false;
+          if (revision !== this.revision) return;
+          await api("auth/confirm", "POST", {
+            challenge: data.challenge,
+            response,
+          });
+        } else {
+          await api(
+            "auth/confirm",
+            "POST",
+            this.method === "password"
+              ? { password: this.value }
+              : { code: this.value },
+          );
+        }
+        if (revision !== this.revision) return;
+        this.value = "";
+        this.$emit("confirmed");
+      } catch (error) {
+        if (revision !== this.revision || error instanceof ActionCancelled)
+          return;
+        this.value = "";
+        this.error = this.$t(
+          error instanceof ApiError && error.status === 429
+            ? "confirmRateLimit"
+            : this.method === "passkey"
+              ? "confirmPasskeyError"
+              : "confirmInvalid",
+        );
+        void this.focusInput();
+      } finally {
+        if (revision === this.revision) {
+          this.busy = false;
+          this.passkeyActive = false;
+        }
+      }
+    },
+  },
+});
+</script>
+<template>
+  <n-form
+    class="confirmation-form"
+    :aria-busy="loading || busy"
+    @submit.prevent="submit"
+  >
+    <p class="muted">{{ $t("confirmActionHelp") }}</p>
+    <n-spin v-if="loading" size="small" :aria-label="$t('loading')" />
+    <div
+      v-if="methods.length > 1"
+      class="confirmation-methods"
+      role="group"
+      :aria-label="$t('confirmMethod')"
+    >
+      <n-button
+        v-for="item in methods"
+        :key="item"
+        :type="method === item ? 'primary' : 'default'"
+        :aria-pressed="method === item"
+        :disabled="busy"
+        @click="select(item)"
+        >{{ label(item) }}</n-button
+      >
+    </div>
+    <n-form-item
+      v-if="!loading && methods.length && method !== 'passkey'"
+      :label="fieldLabel"
+    >
+      <n-input
+        ref="credential"
+        v-model:value="value"
+        :type="method === 'password' ? 'password' : 'text'"
+        :disabled="busy"
+        :maxlength="method === 'password' ? 4096 : 100"
+        :autocomplete="
+          method === 'password' ? 'current-password' : 'one-time-code'
+        "
+        :input-props="{
+          'aria-label': fieldLabel,
+          inputmode: method === 'totp' ? 'numeric' : 'text',
+          autocapitalize: 'none',
+          spellcheck: false,
+        }"
+      />
+    </n-form-item>
+    <n-alert
+      v-if="error"
+      type="error"
+      role="alert"
+      class="confirmation-error"
+      >{{ error }}</n-alert
+    >
+    <div class="detail-actions confirmation-actions">
+      <n-button
+        v-if="!loading && methods.length"
+        type="primary"
+        attr-type="submit"
+        :loading="busy"
+        :disabled="busy || (method !== 'passkey' && !value)"
+        >{{ $t(method === "passkey" ? "confirmPasskey" : "confirm") }}</n-button
+      >
+      <n-button v-if="!loading && !methods.length" @click="load">{{
+        $t("confirmRetry")
+      }}</n-button>
+      <n-button v-if="cancellable" @click="$emit('cancel')">{{
+        $t("cancel")
+      }}</n-button>
+    </div>
+  </n-form>
+</template>
+<style scoped>
+.confirmation-methods,
+.confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.confirmation-methods {
+  margin-bottom: 20px;
+}
+.confirmation-methods :deep(.n-button__content) {
+  white-space: normal;
+}
+.confirmation-methods :deep(.n-button) {
+  height: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  max-width: 100%;
+}
+.confirmation-error {
+  margin-bottom: 16px;
+}
+.confirmation-form p {
+  line-height: 1.6;
+}
+</style>

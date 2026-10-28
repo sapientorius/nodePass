@@ -56,17 +56,18 @@ Stopping preserves data and generated secrets. The preview uses its own Compose 
 
 ## Documentation
 
-| Guide                                  | Use it for                                                            |
-| -------------------------------------- | --------------------------------------------------------------------- |
-| [Installation](docs/INSTALLATION.md)   | Preview, fresh installation, Docker Compose, Coolify and Dokploy      |
-| [Migration](docs/MIGRATION.md)         | Existing configuration/database, SQL dumps, preflight and recovery    |
-| [Operations](docs/OPERATIONS.md)       | Configuration, integrations, backup/restore, key rotation and updates |
-| [Releases](docs/RELEASES.md)           | Release candidates, verified images, publication and upgrade policy   |
-| [Features](docs/FEATURES.md)           | Inherited, modernized and added capabilities                          |
-| [Compatibility](docs/COMPATIBILITY.md) | Tested reference version, formats and legacy API behavior             |
-| [Security model](docs/SECURITY.md)     | Trust boundaries, controls and documented limitations                 |
-| [Contributing](CONTRIBUTING.md)        | Development, tests and verification requirements                      |
-| [Security policy](SECURITY.md)         | Confidential vulnerability reporting                                  |
+| Guide                                     | Use it for                                                            |
+| ----------------------------------------- | --------------------------------------------------------------------- |
+| [Installation](docs/INSTALLATION.md)      | Preview, fresh installation, Docker Compose, Coolify and Dokploy      |
+| [Updates and upgrades](docs/UPGRADING.md) | Release selection, Coolify/Dokploy/Compose updates and recovery       |
+| [Migration](docs/MIGRATION.md)            | Existing configuration/database, SQL dumps, preflight and recovery    |
+| [Operations](docs/OPERATIONS.md)          | Configuration, integrations, backup/restore, key rotation and updates |
+| [Releases](docs/RELEASES.md)              | Release candidates, verified images, publication and upgrade policy   |
+| [Features](docs/FEATURES.md)              | Inherited, modernized and added capabilities                          |
+| [Compatibility](docs/COMPATIBILITY.md)    | Tested reference version, formats and legacy API behavior             |
+| [Security model](docs/SECURITY.md)        | Trust boundaries, controls and documented limitations                 |
+| [Contributing](CONTRIBUTING.md)           | Development, tests and verification requirements                      |
+| [Security policy](SECURITY.md)            | Confidential vulnerability reporting                                  |
 
 ## Technology
 

@@ -14,7 +14,7 @@ import {
   NCheckbox,
   NPopconfirm,
 } from "naive-ui";
-import { api } from "../api";
+import { api, download } from "../api";
 import { useSession } from "../stores/session";
 import { defaultPolicy } from "@nodepass/contracts";
 import Icon from "../components/Icon.vue";
@@ -29,6 +29,7 @@ import NInputNumber from "../components/NumberField.vue";
 import NModal from "../components/AccessibleModal.vue";
 import CustomFieldEditor from "../components/CustomFieldEditor.vue";
 import FieldHelp from "../components/FieldHelp.vue";
+import { profilePermissionGroups } from "../profile-permissions";
 export default defineComponent({
   setup() {
     return { message: useMessage() };
@@ -69,38 +70,7 @@ export default defineComponent({
     accountAccessLoaded: false,
     backupName: "",
     legacyEvents: false,
-    flags: [
-      "accView",
-      "accViewPass",
-      "accViewHistory",
-      "accEdit",
-      "accEditPass",
-      "accAdd",
-      "accDelete",
-      "accFiles",
-      "accPrivate",
-      "accPrivateGroup",
-      "accPermission",
-      "accPublicLinks",
-      "accGlobalSearch",
-      "configGeneral",
-      "configEncryption",
-      "configBackup",
-      "configImport",
-      "mgmUsers",
-      "mgmGroups",
-      "mgmProfiles",
-      "mgmCategories",
-      "mgmCustomers",
-      "mgmApiTokens",
-      "mgmPublicLinks",
-      "mgmTags",
-      "mgmFiles",
-      "mgmItemsPreset",
-      "mgmAccounts",
-      "evl",
-      "mgmCustomFields",
-    ],
+    permissionGroups: profilePermissionGroups,
   }),
   computed: {
     missingUserAssignment() {
@@ -278,6 +248,7 @@ export default defineComponent({
       return useSession();
     },
     async remove(id: number) {
+      if (this.busy) return;
       await this.run(async () => {
         await api(`${this.section}/${id}`, "DELETE");
         await this.load();
@@ -395,6 +366,7 @@ export default defineComponent({
       });
     },
     async savePolicy() {
+      if (this.busy) return;
       await this.run(async () => {
         this.policy = await api("security", "PATCH", this.policy);
         this.message.success(this.$t("saved"), { duration: 3000 });
@@ -416,48 +388,20 @@ export default defineComponent({
       });
     },
     async backup() {
+      if (this.busy) return;
       await this.run(async () => {
         this.backupName = (await api("backups", "POST", {})).name;
         this.message.success(this.$t("saved"), { duration: 3000 });
       });
     },
+    async downloadBackup() {
+      if (this.busy) return;
+      await this.run(() =>
+        download(`backups/${this.backupName}`, undefined, "GET"),
+      );
+    },
     options(rows: any[]) {
       return rows.map((r) => ({ label: r.name, value: r.id }));
-    },
-    flagLabel(flag: string) {
-      const mapping: Record<string, string[]> = {
-        accView: ["reveal", "accounts"],
-        accViewPass: ["reveal", "secret"],
-        accViewHistory: ["reveal", "history"],
-        accEdit: ["edit", "accounts"],
-        accEditPass: ["edit", "secret"],
-        accAdd: ["create"],
-        accDelete: ["delete", "accounts"],
-        accFiles: ["files"],
-        accPrivate: ["private"],
-        accPrivateGroup: ["privateGroup"],
-        accPermission: ["permissions"],
-        accPublicLinks: ["shares"],
-        accGlobalSearch: ["search", "accounts"],
-        mgmAccounts: ["accounts"],
-        configBackup: ["backups", "export"],
-        configImport: ["import"],
-        configGeneral: ["settings"],
-        configEncryption: ["security"],
-        mgmUsers: ["users"],
-        mgmGroups: ["groups"],
-        mgmProfiles: ["profiles"],
-        mgmCategories: ["categories"],
-        mgmCustomers: ["clients"],
-        mgmApiTokens: ["tokens"],
-        mgmPublicLinks: ["shares"],
-        mgmTags: ["tags"],
-        mgmFiles: ["files"],
-        mgmItemsPreset: ["presets"],
-        mgmCustomFields: ["fields"],
-        evl: ["events"],
-      };
-      return (mapping[flag] ?? ["settings"]).map((k) => this.$t(k)).join(" · ");
     },
   },
 });
@@ -581,9 +525,9 @@ export default defineComponent({
         $t("add")
       }}</n-button>
       <div v-if="backupName" style="margin-top: 20px">
-        <a :href="`/api/v1/backups/${backupName}`" download>{{
+        <n-button :loading="busy" @click="downloadBackup">{{
           $t("download")
-        }}</a>
+        }}</n-button>
       </div></n-card
     >
     <n-data-table
@@ -600,6 +544,7 @@ export default defineComponent({
       preset="card"
       :title="$t(editing ? 'edit' : 'add')"
       class="account-modal"
+      :class="{ 'profile-modal': section === 'profiles' }"
       ><n-form @submit.prevent="save"
         ><n-form-item :label="$t('name')"
           ><n-input
@@ -690,15 +635,44 @@ export default defineComponent({
             </p></n-form-item
           ></template
         ><template v-else-if="section === 'profiles'"
-          ><div class="permission-grid">
-            <n-checkbox
-              v-for="flag in flags"
-              :key="flag"
-              :checked="!!form.profile[flag]"
-              @update:checked="form.profile[flag] = $event"
-              >{{ flagLabel(flag) }}</n-checkbox
+          ><p class="profile-permission-intro muted">
+            {{ $t("profilePermissionIntro") }}
+          </p>
+          <fieldset
+            v-for="group in permissionGroups"
+            :key="group.key"
+            class="profile-permission-group"
+            :aria-describedby="
+              group.key === 'profileLegacy' ? 'profile-legacy-help' : undefined
+            "
+          >
+            <legend>{{ $t(group.key) }}</legend>
+            <p
+              v-if="group.key === 'profileLegacy'"
+              id="profile-legacy-help"
+              class="muted profile-legacy-help"
             >
-          </div></template
+              {{ $t("profileLegacyHelp") }}
+            </p>
+            <div
+              v-for="flag in group.flags"
+              :key="flag"
+              class="profile-permission-row"
+              :data-permission="flag"
+            >
+              <n-checkbox
+                :checked="!!form.profile[flag]"
+                @update:checked="form.profile[flag] = $event"
+                >{{ $t(`permission_${flag}`) }}</n-checkbox
+              >
+              <FieldHelp
+                :id="`profile-${flag}-help`"
+                :label="
+                  $t('profilePermissionInfo') + ' · ' + $t(`permission_${flag}`)
+                "
+                :text="$t(`permission_${flag}Help`)"
+              />
+            </div></fieldset></template
         ><template v-else-if="section === 'fields'"
           ><n-form-item :label="$t('notes')"
             ><n-input
@@ -755,6 +729,49 @@ export default defineComponent({
   </section>
 </template>
 <style scoped>
+:global(.account-modal.profile-modal) {
+  width: min(780px, calc(100vw - 28px));
+}
+.profile-permission-intro,
+.profile-legacy-help {
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+.profile-permission-group {
+  min-width: 0;
+  margin: 0 0 24px;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.profile-permission-group legend {
+  padding: 0 12px 0 0;
+  font-weight: 600;
+  font-size: 15px;
+}
+.profile-permission-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 4px 0;
+}
+.profile-permission-row :deep(.n-checkbox) {
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+}
+.profile-permission-row :deep(.n-checkbox__label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.profile-permission-row :deep(.field-help-trigger) {
+  flex: 0 0 auto;
+  margin-left: 0;
+  width: 32px;
+  height: 32px;
+}
 .settings-card h2 {
   margin: 28px 0 20px;
 }
