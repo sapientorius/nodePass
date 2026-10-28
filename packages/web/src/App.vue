@@ -26,7 +26,8 @@ import ConfirmationModal from "./components/ConfirmationModal.vue";
 import { cancelConfirmation } from "./confirmation";
 import { uiLocales, dateLocales } from "./ui-locale";
 import type { Language, UpdateStatus } from "@nodepass/contracts";
-import { api, setCsrf } from "./api";
+import { api } from "./api";
+import { canManage, managementNavigation } from "./navigation";
 export default defineComponent({
   components: {
     NConfigProvider,
@@ -54,6 +55,7 @@ export default defineComponent({
     updates: null as UpdateStatus | null,
     updateBusy: false,
     pollRevision: 0,
+    polling: false,
     poller: undefined as ReturnType<typeof setInterval> | undefined,
   }),
   computed: {
@@ -66,6 +68,12 @@ export default defineComponent({
     ...mapStores(useSession, useAccounts),
     publicRoute() {
       return this.$route.path.startsWith("/public/");
+    },
+    routeAllowed() {
+      return (
+        !this.$route.path.startsWith("/manage/") ||
+        canManage(this.sessionStore.viewer, String(this.$route.params.section))
+      );
     },
     themeOverrides() {
       return {
@@ -94,33 +102,8 @@ export default defineComponent({
     },
     navigation() {
       const viewer = this.sessionStore.viewer;
-      const management = [
-        { key: "users", icon: "users", permission: "mgmUsers" },
-        { key: "groups", icon: "users", permission: "mgmGroups" },
-        { key: "profiles", icon: "shield", permission: "" },
-        { key: "categories", icon: "folder", permission: "mgmCategories" },
-        { key: "clients", icon: "folder", permission: "mgmCustomers" },
-        { key: "tags", icon: "folder", permission: "mgmTags" },
-        { key: "security", icon: "shield", permission: "" },
-        { key: "updates", icon: "clock", permission: "" },
-        { key: "events", icon: "clock", permission: "evl" },
-        { key: "backups", icon: "folder", permission: "configBackup" },
-        {
-          key: "transfer",
-          label: "import",
-          icon: "folder",
-          permission: "configImport",
-        },
-        { key: "integrations", icon: "settings", permission: "configGeneral" },
-        { key: "tokens", icon: "key", permission: "mgmApiTokens" },
-        { key: "presets", icon: "folder", permission: "mgmItemsPreset" },
-        { key: "fields", icon: "folder", permission: "mgmCustomFields" },
-      ]
-        .filter((item) =>
-          item.key === "updates"
-            ? !!viewer?.isAppAdmin
-            : viewer?.isAppAdmin || !!viewer?.permissions[item.permission],
-        )
+      const management = managementNavigation
+        .filter((item) => canManage(viewer, item.key))
         .map((item) => ({
           key: item.label ?? item.key,
           to: "/manage/" + item.key,
@@ -135,7 +118,21 @@ export default defineComponent({
     },
   },
   watch: {
+    "sessionStore.accessEpoch"() {
+      this.pollRevision++;
+      this.notifications = [];
+      this.updates = null;
+    },
+    routeAllowed: {
+      immediate: true,
+      handler(allowed: boolean) {
+        if (!allowed && this.sessionStore.viewer?.phase === "ready")
+          void this.$router.replace("/");
+      },
+    },
     "sessionStore.viewer"(viewer, previous) {
+      if (viewer?.phase === "ready" && !this.routeAllowed)
+        void this.$router.replace("/");
       if (
         viewer?.id !== previous?.id ||
         viewer?.phase !== previous?.phase ||
@@ -145,7 +142,8 @@ export default defineComponent({
         this.updates = null;
         this.notifications = [];
         this.updateBusy = false;
-        if (viewer?.phase === "ready") void this.poll();
+        if (viewer?.phase === "ready" && !this.sessionStore.booting)
+          void this.poll(false);
       }
     },
     "sessionStore.viewer.view"(view: "list" | "cards" | undefined) {
@@ -170,32 +168,50 @@ export default defineComponent({
   },
   async mounted() {
     window.addEventListener("nodepass-expired", this.expired);
+    window.addEventListener("nodepass-refresh", this.refreshSession);
+    window.addEventListener("focus", this.activated);
+    document.addEventListener("visibilitychange", this.activated);
     await this.sessionStore.load();
     if (this.sessionStore.viewer)
       this.$i18n.locale = this.sessionStore.viewer.language;
-    await this.poll();
+    // load() just obtained the current viewer; avoid a duplicate auth request.
+    await this.poll(false);
     this.poller = setInterval(() => void this.poll(), 60000);
   },
   beforeUnmount() {
     this.pollRevision++;
     clearInterval(this.poller);
     window.removeEventListener("nodepass-expired", this.expired);
+    window.removeEventListener("nodepass-refresh", this.refreshSession);
+    window.removeEventListener("focus", this.activated);
+    document.removeEventListener("visibilitychange", this.activated);
   },
   methods: {
     expired() {
-      cancelConfirmation();
-      setCsrf("");
-      this.sessionStore.viewer = null;
-      this.accountsStore.clear();
+      this.sessionStore.clear();
       this.notifications = [];
       this.updates = null;
       this.pollRevision++;
     },
-    async poll() {
-      if (this.sessionStore.viewer?.phase !== "ready") return;
-      const revision = ++this.pollRevision;
-      const viewer = this.sessionStore.viewer;
+    refreshSession() {
+      if (!this.publicRoute && this.sessionStore.viewer?.phase === "ready")
+        void this.sessionStore.refresh();
+    },
+    activated() {
+      if (document.visibilityState === "visible") this.refreshSession();
+    },
+    async poll(refresh = true) {
+      if (
+        this.polling ||
+        this.publicRoute ||
+        this.sessionStore.viewer?.phase !== "ready"
+      )
+        return;
+      this.polling = true;
       try {
+        if (refresh && !(await this.sessionStore.refresh())) return;
+        const revision = ++this.pollRevision;
+        const viewer = this.sessionStore.viewer!;
         const [notifications, updates] = await Promise.all([
           api<any[]>("notifications"),
           viewer.isAppAdmin
@@ -211,6 +227,8 @@ export default defineComponent({
         this.updates = updates;
       } catch (e) {
         this.sessionStore.fail(e);
+      } finally {
+        this.polling = false;
       }
     },
     async acknowledgeUpdate(id: string) {
@@ -448,13 +466,26 @@ export default defineComponent({
                     /></n-button>
                   </div>
                 </header>
+                <div v-if="sessionStore.accessNotice" class="access-notice">
+                  <n-alert
+                    type="info"
+                    closable
+                    @close="sessionStore.accessNotice = false"
+                    >{{ $t("accessChanged") }}</n-alert
+                  >
+                </div>
                 <UpdateNotice
                   v-if="updates"
                   :status="updates"
                   :busy="updateBusy"
                   @acknowledge="acknowledgeUpdate"
                 />
-                <main id="main-content"><router-view /></main>
+                <main id="main-content">
+                  <router-view
+                    v-if="routeAllowed"
+                    :key="sessionStore.accessEpoch"
+                  />
+                </main>
                 <footer>
                   nodePass<template v-if="sessionStore.version">
                     <span aria-hidden="true">·</span>v{{ sessionStore.version }}

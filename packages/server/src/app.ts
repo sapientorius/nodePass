@@ -238,9 +238,11 @@ export async function createApp(
             ? (e.message ?? "Request failed")
             : "The request could not be completed",
         ...(error instanceof Forbidden &&
-        ["REAUTHENTICATION_REQUIRED", "CONFIRMATION_INVALID"].includes(
-          error.data?.code,
-        )
+        [
+          "REAUTHENTICATION_REQUIRED",
+          "CONFIRMATION_INVALID",
+          "MFA_REQUIRED",
+        ].includes(error.data?.code)
           ? { code: error.data.code }
           : {}),
       };

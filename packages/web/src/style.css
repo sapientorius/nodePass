@@ -1173,6 +1173,7 @@ footer span {
 .notification-panel .muted {
   color: inherit;
 }
+.access-notice,
 .update-notice {
   margin: 12px 24px 0;
   display: grid;

@@ -116,7 +116,7 @@ export function openApi(
           "401": { description: "Authentication required" },
           "403": {
             description:
-              "Operation denied or MFA required. REAUTHENTICATION_REQUIRED requests confirmation of the current session; CONFIRMATION_INVALID rejects confirmation credentials without ending the session.",
+              "Operation denied or MFA required. MFA_REQUIRED requires multi-factor verification or enrollment. REAUTHENTICATION_REQUIRED requests confirmation of the current session; CONFIRMATION_INVALID rejects confirmation credentials without ending the session.",
           },
           "404": { description: "Resource unavailable" },
           "409": { description: "Version conflict" },

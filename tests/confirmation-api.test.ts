@@ -34,6 +34,30 @@ afterEach(() => {
 });
 
 describe("confirmation and bounded request replay", () => {
+  it.each([
+    ["accounts/1/secret", undefined, 1],
+    ["auth/password", "MFA_REQUIRED", 1],
+    ["auth/session", undefined, 0],
+    ["auth/confirm", "CONFIRMATION_INVALID", 0],
+  ])(
+    "refreshes once without replay or recursive auth refresh for %s (%s)",
+    async (path, code, count) => {
+      const refresh = vi.fn();
+      window.addEventListener("nodepass-refresh", refresh);
+      fetcher.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ message: "Denied", ...(code ? { code } : {}) }),
+          { status: 403 },
+        ),
+      );
+      await expect(api(path as string, "POST", {})).rejects.toBeInstanceOf(
+        ApiError,
+      );
+      expect(refresh).toHaveBeenCalledTimes(Number(count));
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(confirmation.open).toBe(false);
+    },
+  );
   it("pauses and replays the exact submitted body and headers once", async () => {
     fetcher.mockResolvedValueOnce(required()).mockResolvedValueOnce(accepted());
     const data = { minLength: 12, nested: { value: "original" } };

@@ -423,6 +423,7 @@ export class Catalogue {
       data = await this.input(raw, params, target),
       { groups, ...row } = data;
     await this.db.transaction(async (trx) => {
+      let revokeSessions = false;
       if (this.name === "fields") {
         const previous = await trx("CustomFieldDefinition")
           .where({ id: target })
@@ -443,6 +444,19 @@ export class Catalogue {
         const admins = await trx("User")
           .where({ isAdminApp: 1, isDisabled: 0 })
           .forUpdate();
+        const previous = await trx("User")
+          .where({ id: target })
+          .forUpdate()
+          .first();
+        if (!previous) throw new NotFound("Item not found");
+        revokeSessions =
+          data.pass !== undefined ||
+          data.isDisabled === 1 ||
+          ["isAdminApp", "isAdminAcc"].some(
+            (key) =>
+              data[key] !== undefined &&
+              enabled(data[key]) !== enabled(previous[key]),
+          );
         if (
           admins.length === 1 &&
           admins[0].id === target &&
@@ -464,18 +478,8 @@ export class Catalogue {
             userGroupId: group,
           });
       }
-      if (this.name === "users")
+      if (revokeSessions)
         await trx("nodepass_sessions").where({ userId: target }).delete();
-      if (this.name === "profiles") {
-        const users = await trx("User").where({ userProfileId: target });
-        if (users.length)
-          await trx("nodepass_sessions")
-            .whereIn(
-              "userId",
-              users.map((u) => u.id),
-            )
-            .delete();
-      }
       await audit(trx, identity(params).user.id, `${this.name}.edit`, target);
     });
     return this.get(target, params);

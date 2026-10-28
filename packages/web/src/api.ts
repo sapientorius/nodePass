@@ -69,6 +69,12 @@ async function request(
     } catch {
       /* Do not expose server error bodies. */
     }
+    if (
+      response.status === 403 &&
+      failure.code !== "REAUTHENTICATION_REQUIRED" &&
+      (failure.code === "MFA_REQUIRED" || !path.startsWith("auth/"))
+    )
+      window.dispatchEvent(new Event("nodepass-refresh"));
     assertAction(revision);
     if (
       attempt === 0 &&

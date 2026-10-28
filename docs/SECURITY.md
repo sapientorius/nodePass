@@ -24,6 +24,10 @@ Unexpected errors omit database credentials, stacks, keys and decrypted contents
 
 Sharing links require an active completed session and account/password/sharing rights. Creating a link, like reading an individual password, does not require additional five-minute reauthentication. Required MFA, session expiry, CSRF/origin, privacy, retrieval/expiry limits and audit still apply. Other sensitive operations, including recovery-code and API-token management, retain their additional confirmation requirements.
 
+User name, email, notes, login name, group membership and permission-profile edits preserve browser sessions. Profile edits also preserve sessions for their members. Authorization reloads current user, group and profile data on every authenticated request. Setting a password, disabling a user, or granting or removing either application-administrator or account-administrator status revokes all browser sessions for that user in the same transaction as the edit. Resubmitting unchanged administrator flags does not revoke sessions. Existing factor-management and recovery revocation rules remain in effect.
+
+The session response includes an `accessRevision` fingerprint for UI invalidation; it grants no authority. When it changes, the UI discards open views, unsaved entries, displayed secrets and pending confirmations before reloading current data. Required MFA returns HTTP 403 with `code: "MFA_REQUIRED"`; the UI opens the existing MFA verification or enrollment flow without automatically retrying the denied action.
+
 Group-private accounts require the user's primary group even for administrators. Secondary group access can expand explicit group grants only for non-private accounts; changing this setting requires a recent application-administrator session and is audited. Historical metadata and password access additionally enforce each snapshot's original ownership, group and privacy restrictions. See [account permissions](COMPATIBILITY.md#account-permissions).
 
 ## Browser and network

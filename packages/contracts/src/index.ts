@@ -39,6 +39,7 @@ export const defaultPolicy: SecurityPolicy = {
   sessionAbsoluteSeconds: 28800,
 };
 export interface Viewer {
+  accessRevision: string;
   id: number;
   name: string;
   login: string;

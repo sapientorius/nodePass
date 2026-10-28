@@ -15,7 +15,7 @@ import {
 } from "@simplewebauthn/server";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { proxyMatcher, proxyPeerMatcher } from "./proxy.js";
 import { matchingPresets } from "../compat/presets.js";
 import { sessionRange } from "../compat/preset-validation.js";
@@ -276,7 +276,9 @@ export class Auth {
         .update({ complete: 0 });
     }
     if (!allowPending && !session.complete)
-      throw new Forbidden("Complete multi-factor authentication");
+      throw new Forbidden("Complete multi-factor authentication", {
+        code: "MFA_REQUIRED",
+      });
     if (now - Number(session.lastSeen) > 30000)
       await this.db("nodepass_sessions")
         .where({ id: session.id })
@@ -290,10 +292,32 @@ export class Auth {
   }
   async viewer(identity: RequestIdentity): Promise<Viewer & { phase: string }> {
     const { user, session } = identity;
+    const permissions = Object.fromEntries(
+      Object.entries(user.profile).map(([key, value]) => [
+        key,
+        value === true || value === 1,
+      ]),
+    );
     const factors = await this.db("nodepass_factors")
       .where({ userId: user.id, confirmed: 1 })
       .select("id");
     return {
+      // A UI invalidation hint only; authorization always uses current DB state.
+      accessRevision: createHash("sha256")
+        .update(
+          JSON.stringify([
+            user.id,
+            user.userGroupId,
+            [...new Set(user.groups)].sort((a, b) => a - b),
+            !!user.isAdminApp,
+            !!user.isAdminAcc,
+            !!user.isLdap,
+            Object.keys(permissions)
+              .filter((key) => permissions[key])
+              .sort(),
+          ]),
+        )
+        .digest("hex"),
       id: user.id,
       name: user.name,
       login: user.login,
@@ -307,12 +331,7 @@ export class Auth {
       needsMfa: !session.complete,
       phase: session.complete ? "ready" : factors.length ? "verify" : "enroll",
       csrf: session.csrf,
-      permissions: Object.fromEntries(
-        Object.entries(user.profile).map(([k, v]) => [
-          k,
-          v === true || v === 1,
-        ]),
-      ),
+      permissions,
     };
   }
   async issue(

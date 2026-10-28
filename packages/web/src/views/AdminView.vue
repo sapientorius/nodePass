@@ -60,6 +60,7 @@ export default defineComponent({
   data: () => ({
     rows: [] as any[],
     busy: false,
+    active: true,
     show: false,
     editing: 0,
     form: {} as any,
@@ -243,6 +244,12 @@ export default defineComponent({
       },
     },
   },
+  beforeUnmount() {
+    this.active = false;
+    this.form = {};
+    this.show = false;
+    this.rows = [];
+  },
   methods: {
     session() {
       return useSession();
@@ -362,6 +369,9 @@ export default defineComponent({
         this.form = {};
         this.show = false;
         this.message.success(this.$t("saved"), { duration: 3000 });
+        if (["users", "profiles"].includes(this.section)) {
+          if (!(await useSession().refresh(true)) || !this.active) return;
+        }
         await this.load();
       });
     },

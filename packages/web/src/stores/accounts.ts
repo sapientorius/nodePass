@@ -67,9 +67,14 @@ export const useAccounts = defineStore("accounts", {
       this.page = 1;
       localStorage.setItem("nodepass-page-size", String(value));
     },
-    clear() {
+    invalidate() {
       this.items = [];
       this.total = 0;
+      this.loading = false;
+      this.revision++;
+    },
+    clear() {
+      this.invalidate();
       this.search = "";
       this.categoryId = null;
       this.clientId = null;
@@ -78,7 +83,6 @@ export const useAccounts = defineStore("accounts", {
       this.sort = "name";
       this.sortDirection = "asc";
       this.page = 1;
-      this.revision++;
     },
   },
 });
