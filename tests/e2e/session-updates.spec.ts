@@ -271,6 +271,19 @@ test("removed management rights redirect direct routes without logging out", asy
   const state = await fixture(page);
   state.user.isAdminApp = false;
   state.permissions = { mgmUsers: true };
+  await page.route("**/api/v1/users", (route) =>
+    route.fulfill({
+      json: [
+        {
+          ...state.user,
+          id: 2,
+          name: "Managed session user",
+          login: "managed",
+          management: { canEdit: true, canResetPassword: false },
+        },
+      ],
+    }),
+  );
   await ready(page, state, "/manage/users");
   await edit(page);
   state.permissions = {};
