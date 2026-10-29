@@ -11,7 +11,6 @@ import {
 } from "@feathersjs/errors";
 import { readFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createReadStream } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Fields } from "./services/fields.js";
 import { fieldModule } from "./compat/field-modules.js";
@@ -31,7 +30,6 @@ import { Catalogue } from "./services/catalogue.js";
 import { Resources } from "./services/resources.js";
 import { Migration } from "./migration/service.js";
 import { setupFailure } from "./migration/errors.js";
-import { backup } from "./migration/backup.js";
 import {
   checkStrength,
   hashPassword,
@@ -55,6 +53,8 @@ import { openApi } from "./openapi.js";
 import { token } from "./security/crypto.js";
 import { mapData } from "./compat/data.js";
 import { managementParams } from "./services/user-management.js";
+import { Backups } from "./services/backups.js";
+import { BackupRestores } from "./services/backup-restores.js";
 
 export async function createApp(
   config: Config,
@@ -112,11 +112,19 @@ export async function createApp(
         throw new Forbidden("Custom-field secret permission required");
     },
   );
-  if (await db.schema.hasTable("nodepass_migrations")) {
+  const backups = new Backups(db, config);
+  await backups.initialize();
+  const restores = new BackupRestores(db, config, backups);
+  let maintenance = !(await restores.recoverStartup());
+  let closing = false;
+  let inFlight = 0;
+  if (!maintenance && (await db.schema.hasTable("nodepass_migrations"))) {
     await migrate(db);
     await vault.load();
   }
-  let status = await migration.status();
+  let status = maintenance
+    ? { installed: false, legacy: false, ready: false }
+    : await migration.status();
   let updates = new Updates(
     db,
     integrations,
@@ -130,8 +138,53 @@ export async function createApp(
       integrations,
       new UpdateSource(options.updateFetch),
     );
-    if (status.ready) stopJobs = jobs(db, integrations, updates);
+    if (status.ready && !maintenance && !closing) {
+      stopJobs = jobs(db, integrations, updates);
+      await backups.start();
+    }
   };
+  restores.attach({
+    block: () => {
+      maintenance = true;
+      vault.destroy();
+    },
+    enter: async () => {
+      maintenance = true;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          (async () => {
+            await Promise.all([stopJobs(), backups.pause()]);
+            while (inFlight > 0)
+              await new Promise((done) => setTimeout(done, 25));
+          })(),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error("Restore drain timed out")),
+              30000,
+            );
+          }),
+        ]);
+      } catch (error) {
+        maintenance = false;
+        backups.resume();
+        await startJobs();
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    leave: async () => {
+      vault.destroy();
+      await vault.load();
+      status = await migration.status();
+      if (!status.ready || !vault.unlocked)
+        throw new Error("Restored instance is not ready");
+      maintenance = false;
+      backups.resume();
+      await startJobs();
+    },
+  });
   await startJobs();
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
   const app = koa(feathers());
@@ -141,6 +194,27 @@ export async function createApp(
   const trustedPeer = proxyPeerMatcher(config.trustedProxies);
   const limiter = new Map<string, { count: number; until: number }>();
   app.use(async (ctx, next) => {
+    const restoreStatus =
+      ctx.method === "GET" &&
+      /^\/api\/v1\/backup-restores\/[A-Za-z0-9_-]{43}\/status$/.test(ctx.path);
+    const exempt =
+      ctx.path.startsWith("/health/") ||
+      ctx.path === "/api/v1/status" ||
+      restoreStatus;
+    const application =
+      ctx.path.startsWith("/api/v1/") || ctx.path === "/api.php";
+    if (application && !exempt) {
+      inFlight++;
+      let released = false;
+      const release = () => {
+        if (!released) {
+          released = true;
+          inFlight--;
+        }
+      };
+      ctx.res.once("finish", release);
+      ctx.res.once("close", release);
+    }
     ctx.set({
       "Content-Security-Policy":
         "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'",
@@ -154,6 +228,10 @@ export async function createApp(
     if (config.production)
       ctx.set("Strict-Transport-Security", "max-age=31536000");
     try {
+      if (maintenance && application && !exempt)
+        throw new Unavailable("Database maintenance in progress", {
+          code: "MAINTENANCE",
+        });
       const forwarded = [
         "x-forwarded-for",
         "x-forwarded-proto",
@@ -189,7 +267,8 @@ export async function createApp(
           "/api/v1/auth/passkey/login-options",
         ].includes(ctx.path) &&
         !ctx.path.startsWith("/api/v1/setup/") &&
-        !ctx.path.startsWith("/api/v1/public/")
+        !ctx.path.startsWith("/api/v1/public/") &&
+        !restoreStatus
       ) {
         if (!status.ready)
           throw new Unavailable("Complete instance setup first");
@@ -253,6 +332,9 @@ export async function createApp(
         ].includes(error.data?.code)
           ? { code: error.data.code }
           : {}),
+        ...(error instanceof Unavailable && error.data?.code === "MAINTENANCE"
+          ? { code: "MAINTENANCE" }
+          : {}),
       };
       if (ctx.status >= 500)
         console.error(
@@ -271,7 +353,10 @@ export async function createApp(
           ? "90mb"
           : ctx.path === "/api.php"
             ? "64kb"
-            : ctx.path.startsWith("/api/v1/auth")
+            : ctx.path.startsWith("/api/v1/auth") ||
+                /^\/api\/v1\/backup-restores\/[A-Za-z0-9_-]{43}\/confirm$/.test(
+                  ctx.path,
+                )
               ? "16kb"
               : "15mb",
       json: true,
@@ -399,16 +484,24 @@ export async function createApp(
       ctx.body = { status: "database-unavailable" };
       return;
     }
-    ctx.status = status.ready && vault.unlocked ? 200 : 503;
-    ctx.body = { status: ctx.status === 200 ? "ready" : "setup-required" };
+    ctx.status = !maintenance && status.ready && vault.unlocked ? 200 : 503;
+    ctx.body = {
+      status: maintenance
+        ? "maintenance"
+        : ctx.status === 200
+          ? "ready"
+          : "setup-required",
+    };
   });
   router.get("/api/v1/status", async (ctx) => {
     ctx.body = {
       name: "nodePass",
       version,
-      setupRequired: !status.ready,
+      setupRequired: !maintenance && !status.ready,
+      maintenance,
       legacy: status.legacy,
       sso:
+        !maintenance &&
         status.ready &&
         (
           await vault.configuration<Record<string, unknown>>(
@@ -974,14 +1067,25 @@ export async function createApp(
   });
   router.post("/api/v1/backups", async (ctx) => {
     const id = await permission(ctx, "configBackup", true);
-    const name = await backup(
-      db,
-      resolve(config.dataDir, "backups"),
-      config.deploymentKey,
-      { legacy: config.legacy, publicUrl: config.publicUrl },
+    const job = await backups.create(id.user.id);
+    await backups.wait();
+    const completed = await backups.job(job.id);
+    if (completed?.state !== "complete")
+      throw new Unavailable("Backup creation failed");
+    ctx.body = { name: completed.name };
+  });
+  router.get("/api/v1/backups", async (ctx) => {
+    await permission(ctx, "configBackup");
+    ctx.body = await backups.files.list(
+      ctx.query.skip === undefined ? 0 : Number(ctx.query.skip),
+      ctx.query.limit === undefined ? 25 : Number(ctx.query.limit),
     );
-    await audit(db, id.user.id, "backup.create");
-    ctx.body = { name };
+  });
+  router.delete("/api/v1/backups/:name", async (ctx) => {
+    const id = await admin(ctx, true);
+    await backups.files.remove(ctx.params.name!);
+    await audit(db, id.user.id, "backup.delete");
+    ctx.status = 204;
   });
   router.get("/api/v1/backups/:name", async (ctx) => {
     await permission(ctx, "configBackup", true);
@@ -989,13 +1093,119 @@ export async function createApp(
       throw new BadRequest("Invalid backup name");
     ctx.set("Content-Disposition", `attachment; filename="${ctx.params.name}"`);
     ctx.type = "application/octet-stream";
-    ctx.body = createReadStream(
-      resolve(config.dataDir, "backups", ctx.params.name!),
+    const lease = await backups.files.stream(ctx.params.name!);
+    const release = () => {
+      void lease
+        .release()
+        .catch(() =>
+          console.error(
+            JSON.stringify({ event: "backup.download.close.failed" }),
+          ),
+        );
+    };
+    ctx.res.once("finish", release);
+    ctx.res.once("close", release);
+    lease.stream.once("error", release);
+    ctx.body = lease.stream;
+  });
+  router.get("/api/v1/backup-schedule", async (ctx) => {
+    await admin(ctx);
+    ctx.body = await backups.schedule();
+  });
+  router.patch("/api/v1/backup-schedule", async (ctx) => {
+    const id = await admin(ctx, true);
+    ctx.body = await backups.configure(body(ctx), id.user.id);
+  });
+  router.post("/api/v1/backup-jobs", async (ctx) => {
+    const id = await permission(ctx, "configBackup", true);
+    exact(body(ctx), []);
+    ctx.body = await backups.create(id.user.id);
+    ctx.status = 202;
+  });
+  router.get("/api/v1/backup-jobs/latest", async (ctx) => {
+    await permission(ctx, "configBackup");
+    ctx.body = (await backups.latest()) ?? null;
+  });
+  router.get("/api/v1/backup-jobs/:id", async (ctx) => {
+    await permission(ctx, "configBackup");
+    ctx.body = (await backups.job(ctx.params.id!)) ?? null;
+  });
+  router.get("/api/v1/backup-restores", async (ctx) => {
+    ctx.body = await restores.latest(await admin(ctx));
+  });
+  router.post("/api/v1/backup-restores", async (ctx) => {
+    const id = await admin(ctx, true),
+      data = body(ctx);
+    exact(data, ["name"]);
+    ctx.body = await restores.begin(
+      id,
+      data.name === undefined ? undefined : text(data, "name", 100),
+    );
+    ctx.status = 202;
+  });
+  router.put("/api/v1/backup-restores/:id/upload", async (ctx) => {
+    const id = await admin(ctx),
+      data = body(ctx);
+    exact(data, ["offset", "content", "final"]);
+    ctx.body = await restores.upload(
+      ctx.params.id!,
+      id,
+      data.offset,
+      text(data, "content", 12 * 1024 ** 2),
+      data.final,
+    );
+  });
+  router.post("/api/v1/backup-restores/:id/check", async (ctx) => {
+    const id = await admin(ctx, true),
+      data = body(ctx);
+    exact(data, ["key"]);
+    try {
+      ctx.body = await restores.check(
+        ctx.params.id!,
+        id,
+        text(data, "key", 100),
+      );
+      ctx.status = 202;
+    } finally {
+      data.key = "";
+    }
+  });
+  router.post("/api/v1/backup-restores/:id/confirm", async (ctx) => {
+    await admin(ctx);
+    await auth.confirm(ctx);
+    ctx.body = {
+      confirmed: true,
+      authorization: await restores.authorize(
+        ctx.params.id!,
+        await admin(ctx, true),
+      ),
+    };
+  });
+  router.post("/api/v1/backup-restores/:id/commit", async (ctx) => {
+    const id = await admin(ctx, true),
+      data = body(ctx);
+    exact(data, ["confirmation", "authorization"]);
+    ctx.body = await restores.commit(
+      ctx.params.id!,
+      id,
+      text(data, "confirmation", 200),
+      text(data, "authorization", 100),
+    );
+    ctx.status = 202;
+  });
+  router.delete("/api/v1/backup-restores/:id", async (ctx) => {
+    await restores.cancel(ctx.params.id!, await admin(ctx, true));
+    ctx.status = 204;
+  });
+  router.get("/api/v1/backup-restores/:id/status", async (ctx) => {
+    ctx.body = await restores.status(
+      ctx.params.id!,
+      ctx.get("x-backup-job-token"),
     );
   });
   router.post("/api.php", async (ctx) => {
     requireReady();
-    await jsonRpc(ctx, auth, accounts);
+    await jsonRpc(ctx, auth, accounts, backups);
   });
   router.get("/api/v1/integrations/:name", async (ctx) => {
     await permission(ctx, "configGeneral");
@@ -1131,10 +1341,15 @@ export async function createApp(
     accounts,
     resources,
     migration,
+    backups,
+    restores,
     get updates() {
       return updates;
     },
     close: async () => {
+      closing = true;
+      await restores.stop();
+      await backups.stop();
       await stopJobs();
       await Promise.allSettled([...setupTasks]);
       vault.destroy();

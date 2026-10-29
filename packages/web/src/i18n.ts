@@ -18,6 +18,7 @@ import { shareMessages } from "./share-translations";
 import { userGroupMessages } from "./user-group-translations";
 import { accountAccessMessages } from "./account-access-translations";
 import { userManagementMessages } from "./user-management-translations";
+import { backupMessages } from "./backup-translations";
 export const languageOptions = [
   { label: "Deutsch", value: "de_DE" },
   { label: "English", value: "en_US" },
@@ -108,6 +109,7 @@ export const messages = Object.fromEntries(
         ...accountAccessMessages[locale],
         ...profilePermissionMessages[locale],
         ...userManagementMessages[locale],
+        ...backupMessages[locale],
         ...confirmationMessages[locale],
         ...sessionMessages[locale],
         ...eventMessages[locale],

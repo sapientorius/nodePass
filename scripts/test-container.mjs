@@ -360,6 +360,147 @@ try {
     restoredEnv,
   );
   check(true, "CLI restore decrypts accounts and revokes copied sessions");
+  // Hold a metadata read lock on a later table so replacement stops after earlier DROP statements.
+  // Only this test's generated application/database containers and volumes are involved.
+  const recovery = await request("/api/v1/auth/recovery", "POST", {});
+  check(
+    recovery.response.ok && recovery.value.codes?.length > 1,
+    "restore confirmation recovery factor",
+  );
+  const currentAccount = await request("/api/v1/accounts/" + account.value.id);
+  check(
+    (
+      await request("/api/v1/accounts/" + account.value.id, "PATCH", {
+        name: "Preserve after interrupted restore",
+        categoryId: 1,
+        clientId: 1,
+        userGroupId: 1,
+        version: currentAccount.value.version,
+      })
+    ).response.ok,
+    "pre-restore recovery marker",
+  );
+  const restoreJob = await request("/api/v1/backup-restores", "POST", {
+    name: saved.value.name,
+  });
+  check(restoreJob.response.status === 202, "web restore job creation");
+  const sourceKey = (
+    await node(
+      "process.stdout.write(require('node:fs').readFileSync('/run/secrets/deployment-key','utf8').trim());",
+    )
+  ).output;
+  check(
+    (
+      await request(
+        "/api/v1/backup-restores/" + restoreJob.value.id + "/check",
+        "POST",
+        { key: sourceKey },
+      )
+    ).response.status === 202,
+    "web restore authenticates source before deletion",
+  );
+  const restoreStatus = () =>
+    request(
+      "/api/v1/backup-restores/" + restoreJob.value.id + "/status",
+      "GET",
+      undefined,
+      { "x-backup-job-token": restoreJob.value.statusToken },
+    );
+  await wait(async () => (await restoreStatus()).value.state === "ready");
+  const authorization = await request(
+    "/api/v1/backup-restores/" + restoreJob.value.id + "/confirm",
+    "POST",
+    { code: recovery.value.codes[0] },
+  );
+  check(
+    authorization.response.ok && authorization.value.authorization,
+    "fresh job-specific restore confirmation",
+  );
+  const blocker = prefix + "-blocker";
+  await run([
+    "run",
+    "--detach",
+    "--rm",
+    "--name",
+    blocker,
+    "--network",
+    network,
+    "-v",
+    secrets + ":/run/secrets:ro",
+    ...environment,
+    image,
+    "-e",
+    "(async()=>{const{loadConfig}=await import('./packages/server/dist/server/src/config.js'),{database}=await import('./packages/server/dist/server/src/db.js');const db=database(loadConfig()),trx=await db.transaction();await trx('Config').select('*').limit(1);console.log('BLOCKER_READY');const timer=setInterval(()=>{},1000);process.on('SIGTERM',async()=>{clearInterval(timer);await trx.rollback();await db.destroy();});})().catch(()=>process.exit(1));",
+  ]);
+  created.containers.push(blocker);
+  await wait(async () =>
+    (await run(["logs", blocker])).output.includes("BLOCKER_READY"),
+  );
+  check(
+    (
+      await request(
+        "/api/v1/backup-restores/" + restoreJob.value.id + "/commit",
+        "POST",
+        {
+          confirmation: restoreJob.value.confirmation,
+          authorization: authorization.value.authorization,
+        },
+      )
+    ).response.status === 202,
+    "destructive restore accepts the exact confirmation",
+  );
+  await wait(async () => (await restoreStatus()).value.step === "replacing");
+  await wait(
+    async () =>
+      (
+        await node(
+          "(async()=>{const{loadConfig}=await import('./packages/server/dist/server/src/config.js'),{database}=await import('./packages/server/dist/server/src/db.js');const db=database(loadConfig());try{process.stdout.write((await db.schema.hasTable('Account'))?'present':'dropped');}finally{await db.destroy();}})().catch(()=>process.exit(1));",
+          "65532",
+          environment,
+        )
+      ).output === "dropped",
+  );
+  check(
+    (await request("/health/ready")).response.status === 503,
+    "restore maintenance blocks readiness after partial deletion",
+  );
+  await run(["kill", "--signal", "KILL", app]);
+  await run(["stop", blocker]);
+  await run(["start", app]);
+  base =
+    "http://127.0.0.1:" +
+    JSON.parse((await run(["inspect", app])).output)[0].NetworkSettings.Ports[
+      "3000/tcp"
+    ][0].HostPort;
+  await wait(
+    async () => (await request("/health/ready")).response.status === 200,
+  );
+  check(
+    (await restoreStatus()).value.error === "rolledBack",
+    "container restart rolls an interrupted web restore back from its journal",
+  );
+  check(
+    (await request("/api/v1/auth/session")).response.status === 401,
+    "crash recovery revokes original sessions",
+  );
+  check(
+    (await request("/api/v1/auth/login", "POST", { login: "admin", password }))
+      .value.phase === "verify",
+    "restored administrator still requires a factor",
+  );
+  check(
+    (
+      await request("/api/v1/auth/totp/verify", "POST", {
+        code: recovery.value.codes[1],
+      })
+    ).value.phase === "ready",
+    "restored recovery factor completes a fresh login",
+  );
+  check(
+    (await request("/api/v1/accounts/" + account.value.id)).value.name ===
+      "Preserve after interrupted restore",
+    "safety snapshot preserves writes newer than the imported backup",
+  );
   const missing = await run(["run", "--rm", image], true);
   check(missing.code !== 0, "missing deployment secrets fail closed");
   check(

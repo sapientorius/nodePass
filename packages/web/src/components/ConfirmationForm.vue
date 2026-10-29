@@ -33,7 +33,10 @@ export default defineComponent({
     NRadioGroup,
     NSpin,
   },
-  props: { cancellable: Boolean },
+  props: {
+    cancellable: Boolean,
+    endpoint: { type: String, default: "auth/confirm" },
+  },
   emits: ["confirmed", "cancel"],
   data: () => ({
     methods: [] as ConfirmationMethod[],
@@ -123,6 +126,8 @@ export default defineComponent({
       this.busy = true;
       this.error = "";
       try {
+        let result: { authorization?: string };
+        const endpoint = this.endpoint;
         if (this.method === "passkey") {
           const data = await api("auth/confirm/passkey-options", "POST", {});
           if (revision !== this.revision) return;
@@ -132,13 +137,13 @@ export default defineComponent({
           });
           this.passkeyActive = false;
           if (revision !== this.revision) return;
-          await api("auth/confirm", "POST", {
+          result = await api(endpoint, "POST", {
             challenge: data.challenge,
             response,
           });
         } else {
-          await api(
-            "auth/confirm",
+          result = await api(
+            endpoint,
             "POST",
             this.method === "password"
               ? { password: this.value }
@@ -147,7 +152,7 @@ export default defineComponent({
         }
         if (revision !== this.revision) return;
         this.value = "";
-        this.$emit("confirmed");
+        this.$emit("confirmed", result.authorization);
       } catch (error) {
         if (revision !== this.revision || error instanceof ActionCancelled)
           return;

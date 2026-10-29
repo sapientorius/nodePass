@@ -12,6 +12,7 @@ export const useSession = defineStore("session", {
   state: () => ({
     viewer: null as (Viewer & { phase: string }) | null,
     setupRequired: false,
+    maintenance: false,
     legacy: false,
     sso: false,
     version: "",
@@ -87,14 +88,16 @@ export const useSession = defineStore("session", {
         const status = await api<{
           version: string;
           setupRequired: boolean;
+          maintenance?: boolean;
           legacy: boolean;
           sso: boolean;
         }>("status");
         this.version = status.version;
         this.setupRequired = status.setupRequired;
+        this.maintenance = status.maintenance === true;
         this.legacy = status.legacy;
         this.sso = status.sso;
-        if (!status.setupRequired) {
+        if (!status.setupRequired && !this.maintenance) {
           try {
             this.accept(await api("auth/session"));
             if (this.viewer?.phase === "ready")

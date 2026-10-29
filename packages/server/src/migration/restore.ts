@@ -27,6 +27,7 @@ export async function restore(
   sourceKey: Buffer,
   targetKey: Buffer,
   directory: string,
+  lockAlreadyHeld = false,
 ): Promise<void> {
   const [tables] = await db.raw("SHOW TABLES");
   if (tables.length)
@@ -51,7 +52,7 @@ export async function restore(
     present.add(record.table);
   });
   await createBaseline(db);
-  await migrate(db);
+  await migrate(db, lockAlreadyHeld);
   const columns = new Map<string, Set<string>>();
   for (const table of [...Object.keys(legacy), ...internal])
     columns.set(table, new Set(Object.keys(await db(table).columnInfo())));
@@ -86,5 +87,5 @@ export async function restore(
       await trx.raw("SET FOREIGN_KEY_CHECKS=1");
     }
   });
-  await migrate(db);
+  await migrate(db, lockAlreadyHeld);
 }

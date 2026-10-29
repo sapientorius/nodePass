@@ -14,13 +14,14 @@ import {
   NCheckbox,
   NPopconfirm,
 } from "naive-ui";
-import { api, download, ApiError } from "../api";
+import { api, ApiError } from "../api";
 import { useSession } from "../stores/session";
 import { defaultPolicy, type UserManagement } from "@nodepass/contracts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import TransferView from "./TransferView.vue";
 import UpdatesView from "./UpdatesView.vue";
+import BackupsView from "./BackupsView.vue";
 import IntegrationsView from "./IntegrationsView.vue";
 import TokensView from "./TokensView.vue";
 import PresetsView from "./PresetsView.vue";
@@ -52,6 +53,7 @@ export default defineComponent({
     PageAccent,
     TransferView,
     UpdatesView,
+    BackupsView,
     IntegrationsView,
     TokensView,
     PresetsView,
@@ -70,7 +72,6 @@ export default defineComponent({
     policy: { ...defaultPolicy },
     accountAccess: { fullGroupAccess: false },
     accountAccessLoaded: false,
-    backupName: "",
     legacyEvents: false,
     permissionGroups: profilePermissionGroups,
   }),
@@ -495,19 +496,6 @@ export default defineComponent({
         this.message.success(this.$t("saved"), { duration: 3000 });
       });
     },
-    async backup() {
-      if (this.busy) return;
-      await this.run(async () => {
-        this.backupName = (await api("backups", "POST", {})).name;
-        this.message.success(this.$t("saved"), { duration: 3000 });
-      });
-    },
-    async downloadBackup() {
-      if (this.busy) return;
-      await this.run(() =>
-        download(`backups/${this.backupName}`, undefined, "GET"),
-      );
-    },
     options(rows: any[]) {
       return rows.map((r) => ({ label: r.name, value: r.id }));
     },
@@ -625,19 +613,7 @@ export default defineComponent({
         >
       </n-form></n-card
     >
-    <n-card v-else-if="section === 'backups'" class="settings-card"
-      ><div class="backup-illustration"><Icon name="shield" :size="48" /></div>
-      <h2>{{ $t("backups") }}</h2>
-      <p class="muted">{{ $t("security") }} · nodePass</p>
-      <n-button type="primary" :loading="busy" @click="backup">{{
-        $t("add")
-      }}</n-button>
-      <div v-if="backupName" style="margin-top: 20px">
-        <n-button :loading="busy" @click="downloadBackup">{{
-          $t("download")
-        }}</n-button>
-      </div></n-card
-    >
+    <BackupsView v-else-if="section === 'backups'" />
     <div
       v-else
       :class="{ 'activity-table-scroll': section === 'events' }"

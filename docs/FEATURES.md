@@ -24,16 +24,16 @@ Card/list selection and authenticator-based TOTP existed in sysPass. They are pr
 
 ## Additions and modernizations
 
-| Area                    | Change                                                                                                                                     |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Application stack       | TypeScript, FeathersJS 5/Koa and Vue 3/Pinia/NaiveUI replace the PHP application                                                           |
-| Passkeys                | Passwordless sign-in, exact origin/RP validation, mandatory authenticator user verification and multiple credentials                       |
-| Built-in MFA            | Native TOTP, replay prevention, hashed one-time recovery codes and enforceable MFA policy; administrator MFA required by default           |
-| Login password handling | Argon2id, upgrade of valid legacy hashes at login and configurable length/strength policy for new/changed login passwords                  |
-| Vault activation        | One-time master-password verification during migration; no per-user master-password activation afterward                                   |
-| Interface               | Responsive redesign, light default and dark graphite themes, locally bundled assets and 14 languages                                       |
-| Backups and deployment  | Authenticated encrypted backup streams, checked manifests, separate empty restore targets, deployment-key rotation and hardened containers |
-| Verification            | Blocking CI gate, database-version matrix, security scans, browser checks and SBOM generation                                              |
+| Area                    | Change                                                                                                                                                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application stack       | TypeScript, FeathersJS 5/Koa and Vue 3/Pinia/NaiveUI replace the PHP application                                                                                                                                 |
+| Passkeys                | Passwordless sign-in, exact origin/RP validation, mandatory authenticator user verification and multiple credentials                                                                                             |
+| Built-in MFA            | Native TOTP, replay prevention, hashed one-time recovery codes and enforceable MFA policy; administrator MFA required by default                                                                                 |
+| Login password handling | Argon2id, upgrade of valid legacy hashes at login and configurable length/strength policy for new/changed login passwords                                                                                        |
+| Vault activation        | One-time master-password verification during migration; no per-user master-password activation afterward                                                                                                         |
+| Interface               | Responsive redesign, light default and dark graphite themes, locally bundled assets and 14 languages                                                                                                             |
+| Backups and deployment  | Managed encrypted backups, calendar scheduling and automatic retention, verified administrator restore with safety rollback, separate empty CLI restore targets, deployment-key rotation and hardened containers |
+| Verification            | Blocking CI gate, database-version matrix, security scans, browser checks and SBOM generation                                                                                                                    |
 
 Languages: German, English, Spanish, Catalan, Hungarian, French, Polish, Russian, Dutch, Portuguese, Italian, Danish, Faroese and Japanese.
 
