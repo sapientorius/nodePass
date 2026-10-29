@@ -1,9 +1,9 @@
 # Coolify Compose Service: paste directly into Docker Compose Empty.
 # Assign the public HTTPS domain to app:3000. Coolify generates the secrets.
-# Default: verified nodePass 0.1.3. Override NODEPASS_IMAGE with another verified digest.
+# Default: verified nodePass 0.1.4. Override NODEPASS_IMAGE with another verified digest.
 services:
   app:
-    image: ${NODEPASS_IMAGE:-ghcr.io/sapientorius/nodepass@sha256:5d92a07fb2e736ed8c9befe54c3eff85089435ae0f3991921e1c38af49ee4cee}
+    image: ${NODEPASS_IMAGE:-ghcr.io/sapientorius/nodepass@sha256:4d08c5d930bb53b8b6d494a7207dc17ee56c0f35f6ac1aaf2ec1d0da67800e5b}
     platform: linux/amd64
     restart: unless-stopped
     init: true
