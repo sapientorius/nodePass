@@ -35,6 +35,7 @@ export function openApi(
     for (const method of route.methods) {
       if (["HEAD", "OPTIONS"].includes(method)) continue;
       const write = !["GET", "HEAD"].includes(method),
+        users = path === "/api/v1/users" || path === "/api/v1/users/{id}",
         confirmation = path === "/api/v1/auth/confirm",
         account =
           path === "/api/v1/accounts" || path === "/api/v1/accounts/{id}";
@@ -111,6 +112,23 @@ export function openApi(
           "200": {
             description:
               "Operation completed; responses never include password hashes or vault keys.",
+            ...(users
+              ? {
+                  content: {
+                    "application/json": {
+                      schema:
+                        method === "GET" && path === "/api/v1/users"
+                          ? {
+                              type: "array",
+                              items: {
+                                $ref: "#/components/schemas/UserSummary",
+                              },
+                            }
+                          : { $ref: "#/components/schemas/UserSummary" },
+                    },
+                  },
+                }
+              : {}),
           },
           "400": { description: "Input validation failed" },
           "401": { description: "Authentication required" },
@@ -139,7 +157,40 @@ export function openApi(
       securitySchemes: {
         session: { type: "apiKey", in: "cookie", name: "nodepass" },
       },
-      schemas: { AccountInput: accountInput },
+      schemas: {
+        AccountInput: accountInput,
+        UserSummary: {
+          type: "object",
+          description:
+            "Management metadata is returned only to application administrators or users with mgmUsers. It is read-only; writes always recheck current authorization.",
+          properties: {
+            management: { $ref: "#/components/schemas/UserManagement" },
+          },
+        },
+        UserManagement: {
+          type: "object",
+          readOnly: true,
+          required: ["canEdit", "canResetPassword"],
+          properties: {
+            canEdit: { type: "boolean" },
+            canResetPassword: {
+              type: "boolean",
+              description:
+                "Requires application administrator status or both mgmUsers and mgmUsersResetPassword, plus target scope. Missing reset permission is denied.",
+            },
+            reason: {
+              type: "string",
+              enum: [
+                "permission",
+                "self",
+                "administrator",
+                "groups",
+                "profile",
+              ],
+            },
+          },
+        },
+      },
     },
   };
 }

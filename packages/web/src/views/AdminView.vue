@@ -14,9 +14,9 @@ import {
   NCheckbox,
   NPopconfirm,
 } from "naive-ui";
-import { api, download } from "../api";
+import { api, download, ApiError } from "../api";
 import { useSession } from "../stores/session";
-import { defaultPolicy } from "@nodepass/contracts";
+import { defaultPolicy, type UserManagement } from "@nodepass/contracts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import TransferView from "./TransferView.vue";
@@ -63,6 +63,7 @@ export default defineComponent({
     active: true,
     show: false,
     editing: 0,
+    editingManagement: null as UserManagement | null,
     form: {} as any,
     groups: [] as any[],
     profiles: [] as any[],
@@ -74,6 +75,16 @@ export default defineComponent({
     permissionGroups: profilePermissionGroups,
   }),
   computed: {
+    accessEpoch() {
+      return useSession().accessEpoch;
+    },
+    userPasswordVisible() {
+      return (
+        !this.editing ||
+        !!useSession().viewer?.isAppAdmin ||
+        this.editingManagement?.canResetPassword === true
+      );
+    },
     missingUserAssignment() {
       return (
         this.section === "users" &&
@@ -159,6 +170,19 @@ export default defineComponent({
                 : "notes",
           ),
           key: k,
+          ...(this.section === "events" && k === "action"
+            ? {
+                render: (row: any) => {
+                  const role =
+                    /^users\.role\.(app|account)\.([01])_to_([01])$/.exec(
+                      row.action,
+                    );
+                  return role
+                    ? `${this.$t(role[1] === "app" ? "appAdmin" : "accountAdmin")}: ${role[2]} → ${role[3]}`
+                    : row.action;
+                },
+              }
+            : {}),
         })),
         ...(this.section === "users"
           ? [
@@ -171,6 +195,7 @@ export default defineComponent({
                     {
                       size: "small",
                       type: row.isDisabled ? "error" : "success",
+                      color: { textColor: "var(--text)" },
                       bordered: false,
                     },
                     {
@@ -196,12 +221,24 @@ export default defineComponent({
                       {
                         size: "small",
                         quaternary: true,
+                        disabled: !this.rowEditable(row),
                         onClick: () => {
                           this.open(row);
                         },
                       },
                       { default: () => this.$t("edit") },
                     ),
+                    ...(!this.rowEditable(row)
+                      ? [
+                          h(
+                            "span",
+                            { class: "muted user-management-reason" },
+                            this.$t(
+                              `userManagement_${row.management?.reason ?? "permission"}`,
+                            ),
+                          ),
+                        ]
+                      : []),
                     ...(!["users", "profiles"].includes(this.section)
                       ? [
                           h(
@@ -237,6 +274,19 @@ export default defineComponent({
     },
   },
   watch: {
+    accessEpoch() {
+      this.form = {};
+      this.editingManagement = null;
+      this.show = false;
+      this.rows = [];
+      if (this.active) void this.load();
+    },
+    show(value: boolean) {
+      if (!value) {
+        this.form = {};
+        this.editingManagement = null;
+      }
+    },
     section: {
       immediate: true,
       handler() {
@@ -251,6 +301,13 @@ export default defineComponent({
     this.rows = [];
   },
   methods: {
+    rowEditable(row: any) {
+      return (
+        this.section !== "users" ||
+        !!useSession().viewer?.isAppAdmin ||
+        row.management?.canEdit === true
+      );
+    },
     session() {
       return useSession();
     },
@@ -267,6 +324,15 @@ export default defineComponent({
         await job();
       } catch (e) {
         useSession().fail(e);
+        if (
+          this.section === "users" &&
+          e instanceof ApiError &&
+          e.status === 403
+        ) {
+          this.show = false;
+          this.form = {};
+          this.rows = await api("users").catch(() => []);
+        }
       } finally {
         this.busy = false;
       }
@@ -304,7 +370,9 @@ export default defineComponent({
       });
     },
     open(row?: any) {
+      if (row && !this.rowEditable(row)) return;
       this.editing = row?.id ?? 0;
+      this.editingManagement = row?.management ?? null;
       const userGroupId = row?.userGroupId ?? null;
       this.form =
         this.section === "users"
@@ -323,7 +391,15 @@ export default defineComponent({
               ),
             }
           : this.section === "profiles"
-            ? { name: row?.name ?? "", profile: { ...(row?.profile ?? {}) } }
+            ? {
+                name: row?.name ?? "",
+                profile: Object.fromEntries(
+                  Object.entries(row?.profile ?? {}).map(([key, value]) => [
+                    key,
+                    value === true || value === 1,
+                  ]),
+                ),
+              }
             : this.section === "fields"
               ? {
                   name: row?.name ?? "",
@@ -360,6 +436,8 @@ export default defineComponent({
           delete data.isAdminAcc;
         }
         if (this.section === "users" && this.editing && !data.password)
+          delete data.password;
+        if (this.section === "users" && !this.userPasswordVisible)
           delete data.password;
         await api(
           `${this.section}${this.editing ? `/${this.editing}` : ""}`,
@@ -566,13 +644,14 @@ export default defineComponent({
               :input-props="{ 'aria-label': $t('login') }"
               v-model:value="form.login"
               autocomplete="off" /></n-form-item
-          ><n-form-item :label="$t('password')"
+          ><n-form-item v-if="userPasswordVisible" :label="$t('password')"
             ><n-input
               :input-props="{ 'aria-label': $t('password') }"
               v-model:value="form.password"
               type="password"
               autocomplete="new-password" /></n-form-item
           ><PasswordStrength
+            v-if="userPasswordVisible"
             :value="form.password"
             v-bind="session().passwordPolicy"
           /><n-form-item :label="$t('email')"
@@ -811,6 +890,11 @@ export default defineComponent({
   display: flex;
   flex-wrap: wrap;
   gap: 12px 20px;
+}
+.user-management-reason {
+  max-width: 280px;
+  white-space: normal;
+  font-size: 12px;
 }
 .user-admin-roles + .user-sign-in {
   margin-top: 24px;

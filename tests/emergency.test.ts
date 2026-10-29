@@ -74,7 +74,12 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         confirmed: 1,
       });
       const params = await r.params();
-      await r.db("nodepass_sessions").insert(params.identity!.session);
+      expect(
+        await r
+          .db("nodepass_sessions")
+          .where({ id: params.identity!.session.id })
+          .first(),
+      ).toBeDefined();
       const code = await emergencyRecovery(r.db, r.vault, input);
       expect(code.length).toBeGreaterThan(32);
       expect(await r.db("nodepass_sessions")).toHaveLength(0);

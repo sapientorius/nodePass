@@ -54,6 +54,11 @@ export interface Viewer {
   csrf: string;
   permissions: Record<string, boolean>;
 }
+export interface UserManagement {
+  canEdit: boolean;
+  canResetPassword: boolean;
+  reason?: "permission" | "self" | "administrator" | "groups" | "profile";
+}
 export interface Account {
   id: number;
   name: string;

@@ -664,7 +664,8 @@ const rows: Record<
 
 const activeFlags = profilePermissionGroups
   .slice(0, 3)
-  .flatMap<string>((group) => [...group.flags]);
+  .flatMap<string>((group) => [...group.flags])
+  .filter((flag) => flag !== "mgmUsersResetPassword");
 const legacyFlags = profilePermissionGroups[3].flags;
 export const profilePermissionMessages = Object.fromEntries(
   Object.entries(rows).map(([locale, row]) => {

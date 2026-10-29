@@ -20,6 +20,7 @@ export const profilePermissionGroups = [
     key: "profileAdministration",
     flags: [
       "mgmUsers",
+      "mgmUsersResetPassword",
       "mgmGroups",
       "mgmProfiles",
       "mgmCategories",
