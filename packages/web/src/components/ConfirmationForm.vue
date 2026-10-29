@@ -6,6 +6,8 @@ import {
   NForm,
   NFormItem,
   NInput,
+  NRadio,
+  NRadioGroup,
   NSpin,
   type InputInst,
 } from "naive-ui";
@@ -21,7 +23,16 @@ import { api, ApiError } from "../api";
 import { ActionCancelled } from "../confirmation";
 
 export default defineComponent({
-  components: { NAlert, NButton, NForm, NFormItem, NInput, NSpin },
+  components: {
+    NAlert,
+    NButton,
+    NForm,
+    NFormItem,
+    NInput,
+    NRadio,
+    NRadioGroup,
+    NSpin,
+  },
   props: { cancellable: Boolean },
   emits: ["confirmed", "cancel"],
   data: () => ({
@@ -60,7 +71,7 @@ export default defineComponent({
           password: "password",
           totp: "totp",
           recovery: "recoveryCodes",
-          passkey: "confirmPasskey",
+          passkey: "confirmPasskeyMethod",
         }[method],
       );
     },
@@ -76,7 +87,6 @@ export default defineComponent({
       this.method = method;
       this.value = "";
       this.error = "";
-      void this.focusInput();
     },
     async load() {
       const revision = ++this.revision;
@@ -168,22 +178,25 @@ export default defineComponent({
   >
     <p class="muted">{{ $t("confirmActionHelp") }}</p>
     <n-spin v-if="loading" size="small" :aria-label="$t('loading')" />
-    <div
+    <n-form-item
       v-if="methods.length > 1"
-      class="confirmation-methods"
-      role="group"
-      :aria-label="$t('confirmMethod')"
+      :label="$t('confirmMethod')"
+      :show-feedback="false"
     >
-      <n-button
-        v-for="item in methods"
-        :key="item"
-        :type="method === item ? 'primary' : 'default'"
-        :aria-pressed="method === item"
+      <n-radio-group
+        class="confirmation-methods"
+        name="confirmation-method"
+        role="radiogroup"
+        :value="method"
+        :aria-label="$t('confirmMethod')"
         :disabled="busy"
-        @click="select(item)"
-        >{{ label(item) }}</n-button
+        @update:value="select"
       >
-    </div>
+        <n-radio v-for="item in methods" :key="item" :value="item">{{
+          label(item)
+        }}</n-radio>
+      </n-radio-group>
+    </n-form-item>
     <n-form-item
       v-if="!loading && methods.length && method !== 'passkey'"
       :label="fieldLabel"
@@ -235,15 +248,13 @@ export default defineComponent({
 .confirmation-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 16px;
 }
-.confirmation-methods {
-  margin-bottom: 20px;
-}
-.confirmation-methods :deep(.n-button__content) {
+.confirmation-methods :deep(.n-radio__label),
+.confirmation-actions :deep(.n-button__content) {
   white-space: normal;
 }
-.confirmation-methods :deep(.n-button) {
+.confirmation-actions :deep(.n-button) {
   height: auto;
   min-height: 36px;
   padding: 8px 12px;

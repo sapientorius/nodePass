@@ -1,6 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { languages, type Language } from "@nodepass/contracts";
+import {
+  languages,
+  type ConfirmationMethod,
+  type Language,
+} from "@nodepass/contracts";
 
 async function fixture(page: Page) {
   const state = {
@@ -10,6 +14,10 @@ async function fixture(page: Page) {
     revision: 1,
     requireConfirm: false,
     confirmed: false,
+    confirmationMethods: ["password"] as ConfirmationMethod[],
+    confirmationFailures: 0,
+    passkeyRequests: 0,
+    confirmations: [] as Record<string, unknown>[],
     writes: [] as { path: string; data: Record<string, unknown> }[],
   };
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -110,10 +118,33 @@ async function fixture(page: Page) {
     else if (path === "auth/session") result = viewer;
     else if (path === "auth/policy") result = { minLength: 15, minScore: 3 };
     else if (path === "auth/confirm" && method === "GET")
-      result = { methods: ["password"] };
-    else if (path === "auth/confirm") {
-      state.confirmed = true;
-      result = { confirmed: true };
+      result = { methods: state.confirmationMethods };
+    else if (path === "auth/confirm/passkey-options") {
+      state.passkeyRequests++;
+      result = {
+        challenge: "synthetic-confirmation-id",
+        options: {
+          challenge: Buffer.from("synthetic confirmation challenge").toString(
+            "base64url",
+          ),
+          rpId: "localhost",
+          userVerification: "required",
+          timeout: 10000,
+        },
+      };
+    } else if (path === "auth/confirm") {
+      state.confirmations.push(data);
+      if (state.confirmationFailures > 0) {
+        state.confirmationFailures--;
+        status = 403;
+        result = {
+          code: "CONFIRMATION_INVALID",
+          message: "Synthetic rejected confirmation",
+        };
+      } else {
+        state.confirmed = true;
+        result = { confirmed: true };
+      }
     } else if (path === "users" && method === "GET") result = users;
     else if (path.startsWith("users/") && method === "PATCH") {
       state.writes.push({ path, data });
@@ -248,6 +279,179 @@ test("confirmation cancellation, exact retry, keyboard and live reset-permission
   await expect(
     dialog.getByRole("textbox", { name: "Password", exact: true }),
   ).toHaveCount(0);
+});
+
+test("a single passkey action runs WebAuthn, allows retry and resumes the preserved change once", async ({
+  page,
+  context,
+}) => {
+  const state = await fixture(page);
+  state.reset = true;
+  state.requireConfirm = true;
+  state.confirmationMethods = ["passkey", "recovery"];
+  state.confirmationFailures = 1;
+  await page.goto("/manage/users");
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  const { authenticatorId } = await cdp.send(
+    "WebAuthn.addVirtualAuthenticator",
+    {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+      },
+    },
+  );
+  try {
+    const credentialId = await page.evaluate(async () => {
+      const credential = (await navigator.credentials.create({
+        publicKey: {
+          challenge: Uint8Array.of(1, 2, 3, 4),
+          rp: { id: "localhost", name: "Synthetic nodePass" },
+          user: {
+            id: Uint8Array.of(1),
+            name: "synthetic-manager",
+            displayName: "Synthetic manager",
+          },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+          authenticatorSelection: {
+            residentKey: "required",
+            userVerification: "required",
+          },
+        },
+      })) as PublicKeyCredential;
+      return credential.id;
+    });
+    await openReader(page);
+    const dialog = page.getByRole("dialog", { name: "Edit", exact: true });
+    const password = dialog.getByRole("textbox", {
+      name: "Password",
+      exact: true,
+    });
+    await password.fill("synthetic passkey protected reset 946!");
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    const confirmation = page.getByRole("dialog", {
+      name: "Confirm your identity",
+      exact: true,
+    });
+    const action = confirmation.getByRole("button", {
+      name: "Confirm with a passkey",
+      exact: true,
+    });
+    await expect(action).toHaveCount(1);
+    await expect(confirmation.getByRole("button")).toHaveCount(2);
+    await expect(
+      confirmation.getByRole("radio", { name: "Passkey", exact: true }),
+    ).toBeChecked();
+    await expect(action).toBeFocused();
+    await page.screenshot({
+      path: "output/playwright/confirmation-passkey-light.png",
+      animations: "disabled",
+    });
+    await action.press("Enter");
+    await expect(confirmation.getByRole("alert")).toContainText(
+      "The passkey could not be confirmed",
+    );
+    expect(state.passkeyRequests).toBe(1);
+    expect(state.confirmations).toHaveLength(1);
+    expect(state.confirmations[0]).toMatchObject({
+      challenge: "synthetic-confirmation-id",
+      response: { id: credentialId, type: "public-key" },
+    });
+    expect(state.writes).toHaveLength(1);
+    await expect(password).toHaveValue(
+      "synthetic passkey protected reset 946!",
+    );
+    await expect(action).toBeEnabled();
+    await action.press("Enter");
+    await expect(confirmation).toBeHidden();
+    await expect(dialog).toBeHidden();
+    expect(state.passkeyRequests).toBe(2);
+    expect(state.confirmations).toHaveLength(2);
+    expect(state.writes).toHaveLength(2);
+    expect(state.writes[1]!.data).toEqual(state.writes[0]!.data);
+  } finally {
+    await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
+  }
+});
+
+test("confirmation methods remain keyboard accessible, clear codes and work on small screens", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.reset = true;
+  state.requireConfirm = true;
+  state.confirmationMethods = ["passkey", "recovery"];
+  await page.addInitScript(() =>
+    localStorage.setItem("nodepass-theme", "dark"),
+  );
+  await page.goto("/manage/users");
+  await openReader(page);
+  const dialog = page.getByRole("dialog", { name: "Edit", exact: true });
+  await dialog
+    .getByRole("textbox", { name: "Password", exact: true })
+    .fill("synthetic recovery protected reset 946!");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Confirm your identity",
+    exact: true,
+  });
+  await page.setViewportSize({ width: 320, height: 844 });
+  const passkey = confirmation.getByRole("radio", {
+    name: "Passkey",
+    exact: true,
+  });
+  const recovery = confirmation.getByRole("radio", {
+    name: "Recovery codes",
+    exact: true,
+  });
+  await passkey.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(recovery).toBeChecked();
+  const code = confirmation.getByRole("textbox", {
+    name: "Recovery codes",
+    exact: true,
+  });
+  await expect(code).toBeVisible();
+  await expect(
+    confirmation.getByRole("button", { name: "Confirm", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Tab");
+  await expect(code).toBeFocused();
+  await code.fill("discard this synthetic code");
+  await confirmation.getByText("Passkey", { exact: true }).click();
+  await expect(passkey).toBeChecked();
+  await expect(code).toHaveCount(0);
+  await confirmation.getByText("Recovery codes", { exact: true }).click();
+  await expect(recovery).toBeChecked();
+  await expect(code).toHaveValue("");
+  expect(state.confirmations).toHaveLength(0);
+  expect(state.passkeyRequests).toBe(0);
+  const audit = await new AxeBuilder({ page })
+    .include(".confirmation-modal")
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(audit.violations).toEqual([]);
+  expect(
+    await confirmation.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "output/playwright/confirmation-recovery-mobile-dark.png",
+    animations: "disabled",
+  });
+  await code.fill("synthetic recovery code");
+  await code.press("Enter");
+  await expect(confirmation).toBeHidden();
+  await expect(dialog).toBeHidden();
+  expect(state.confirmations).toEqual([{ code: "synthetic recovery code" }]);
+  expect(state.writes).toHaveLength(2);
+  expect(state.writes[1]!.data).toEqual(state.writes[0]!.data);
 });
 
 test("new reset permission defaults off in all locales, with accessible responsive controls", async ({
