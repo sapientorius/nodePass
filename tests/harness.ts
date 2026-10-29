@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import { loadConfig } from "../packages/server/src/config.js";
 import { createApp } from "../packages/server/src/app.js";
 import { offlineUpdates } from "./offline-updates.js";
@@ -20,20 +21,20 @@ export async function harness() {
     password: testPassword,
     token: config.setupToken,
   });
-  const params = async (id = 1): Promise<ServiceParams> => ({
-    identity: {
-      user: await runtime.auth.user(id),
-      session: {
-        id: "test-session",
-        userId: id,
-        csrf: "test-csrf",
-        complete: 1,
-        verifiedAt: Date.now(),
-        createdAt: Date.now(),
-        lastSeen: Date.now(),
-      },
-    },
-  });
+  const params = async (id = 1): Promise<ServiceParams> => {
+    const user = await runtime.auth.user(id);
+    const session = {
+      id: randomBytes(32).toString("hex"),
+      userId: id,
+      csrf: "test-csrf",
+      complete: 1,
+      verifiedAt: Date.now(),
+      createdAt: Date.now(),
+      lastSeen: Date.now(),
+    };
+    await runtime.db("nodepass_sessions").insert(session);
+    return { identity: { user, session } };
+  };
   return {
     ...runtime,
     config,

@@ -15,7 +15,7 @@ import {
 } from "@simplewebauthn/server";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { proxyMatcher, proxyPeerMatcher } from "./proxy.js";
 import { matchingPresets } from "../compat/presets.js";
 import { sessionRange } from "../compat/preset-validation.js";
@@ -25,6 +25,7 @@ import {
   languages,
   type SecurityPolicy,
   type Viewer,
+  type ConfirmationMethods,
 } from "@nodepass/contracts";
 import { audit, getSetting, type Database, type Row } from "../db.js";
 import type { Config } from "../config.js";
@@ -275,7 +276,9 @@ export class Auth {
         .update({ complete: 0 });
     }
     if (!allowPending && !session.complete)
-      throw new Forbidden("Complete multi-factor authentication");
+      throw new Forbidden("Complete multi-factor authentication", {
+        code: "MFA_REQUIRED",
+      });
     if (now - Number(session.lastSeen) > 30000)
       await this.db("nodepass_sessions")
         .where({ id: session.id })
@@ -289,10 +292,32 @@ export class Auth {
   }
   async viewer(identity: RequestIdentity): Promise<Viewer & { phase: string }> {
     const { user, session } = identity;
+    const permissions = Object.fromEntries(
+      Object.entries(user.profile).map(([key, value]) => [
+        key,
+        value === true || value === 1,
+      ]),
+    );
     const factors = await this.db("nodepass_factors")
       .where({ userId: user.id, confirmed: 1 })
       .select("id");
     return {
+      // A UI invalidation hint only; authorization always uses current DB state.
+      accessRevision: createHash("sha256")
+        .update(
+          JSON.stringify([
+            user.id,
+            user.userGroupId,
+            [...new Set(user.groups)].sort((a, b) => a - b),
+            !!user.isAdminApp,
+            !!user.isAdminAcc,
+            !!user.isLdap,
+            Object.keys(permissions)
+              .filter((key) => permissions[key])
+              .sort(),
+          ]),
+        )
+        .digest("hex"),
       id: user.id,
       name: user.name,
       login: user.login,
@@ -306,12 +331,7 @@ export class Auth {
       needsMfa: !session.complete,
       phase: session.complete ? "ready" : factors.length ? "verify" : "enroll",
       csrf: session.csrf,
-      permissions: Object.fromEntries(
-        Object.entries(user.profile).map(([k, v]) => [
-          k,
-          v === true || v === 1,
-        ]),
-      ),
+      permissions,
     };
   }
   async issue(
@@ -569,7 +589,117 @@ export class Auth {
         Number(identity.session.verifiedAt || identity.session.createdAt) >
         300000
     )
-      throw new Forbidden("Confirm your identity again");
+      throw new Forbidden("Confirm your identity again", {
+        code: "REAUTHENTICATION_REQUIRED",
+      });
+  }
+  async confirmationMethods(ctx: Context): Promise<void> {
+    const id = await this.identity(ctx);
+    const factors = await this.db("nodepass_factors")
+      .where({ userId: id.user.id, confirmed: 1 })
+      .select("kind");
+    ctx.body = {
+      methods: factors.length
+        ? (["passkey", "totp", "recovery"] as const).filter((kind) =>
+            factors.some((factor) => factor.kind === kind),
+          )
+        : ["password"],
+    } satisfies ConfirmationMethods;
+  }
+  async confirmationOptions(ctx: Context): Promise<void> {
+    const id = await this.identity(ctx);
+    exact(body(ctx), []);
+    await this.limit("passkey/ip", ctx.ip, 40);
+    const factors = await this.db("nodepass_factors").where({
+      userId: id.user.id,
+      kind: "passkey",
+      confirmed: 1,
+    });
+    if (!factors.length) throw this.invalidConfirmation();
+    const options = await generateAuthenticationOptions({
+      rpID: this.config.rpId,
+      userVerification: "required",
+      allowCredentials: factors.map((factor) => ({ id: factor.credentialId })),
+    });
+    ctx.body = {
+      options,
+      challenge: await this.challenge(
+        id.user.id,
+        id.session.id,
+        "passkey-confirm",
+        { challenge: options.challenge },
+      ),
+    };
+  }
+  private invalidConfirmation(): Forbidden {
+    return new Forbidden("Identity confirmation failed", {
+      code: "CONFIRMATION_INVALID",
+    });
+  }
+  async confirm(ctx: Context): Promise<void> {
+    const id = await this.identity(ctx),
+      data = body(ctx);
+    await this.limit("confirm", String(id.user.id));
+    if ("password" in data) {
+      exact(data, ["password"]);
+      const password = text(data, "password", 4096);
+      const factors = await this.db("nodepass_factors")
+        .where({ userId: id.user.id, confirmed: 1 })
+        .first();
+      if (factors) throw this.invalidConfirmation();
+      const row = await this.db("User").where({ id: id.user.id }).first();
+      const valid = id.user.isLdap
+        ? await this.directory(id.user, password)
+        : await verifyPassword(password, Buffer.from(row.pass).toString());
+      if (!valid) throw this.invalidConfirmation();
+    } else if ("code" in data) {
+      exact(data, ["code"]);
+      await this.limit("totp", String(id.user.id), 5, 300000);
+      if (!(await this.verifyCode(id.user.id, text(data, "code", 100))))
+        throw this.invalidConfirmation();
+    } else {
+      exact(data, ["challenge", "response"]);
+      const response = data.response;
+      if (!response || typeof response !== "object" || Array.isArray(response))
+        throw new BadRequest("Invalid response");
+      const challenge = text(data, "challenge");
+      const credentialId = text(response as Row, "id", 1024);
+      const pending = await this.consume(
+        challenge,
+        "passkey-confirm",
+        id.user.id,
+        id.session.id,
+      ).catch((error: unknown) => {
+        if (error instanceof NotAuthenticated) throw this.invalidConfirmation();
+        throw error;
+      });
+      const factor = await this.db("nodepass_factors")
+        .where({
+          userId: id.user.id,
+          kind: "passkey",
+          confirmed: 1,
+          credentialHash: digest(credentialId),
+        })
+        .first();
+      if (
+        !factor ||
+        !(await this.verifyPasskey(
+          factor,
+          response as AuthenticationResponseJSON,
+          pending.challenge,
+        ))
+      )
+        throw this.invalidConfirmation();
+    }
+    // Recheck expiry/revocation after expensive authentication; never recreate a session.
+    const current = await this.identity(ctx);
+    if (current.session.id !== id.session.id)
+      throw new NotAuthenticated("Session changed");
+    const changed = await this.db("nodepass_sessions")
+      .where({ id: id.session.id, userId: id.user.id, complete: 1 })
+      .update({ verifiedAt: Date.now() });
+    if (!changed) throw new NotAuthenticated("Session expired");
+    ctx.body = { confirmed: true };
   }
   private async enrollment(identity: RequestIdentity): Promise<void> {
     if (identity.session.complete) {
@@ -658,10 +788,14 @@ export class Auth {
       data = body(ctx);
     exact(data, ["code"]);
     await this.limit("totp", String(id.user.id), 5, 300000);
-    const code = text(data, "code", 100);
-    const valid = await this.db.transaction(async (trx) => {
+    if (!(await this.verifyCode(id.user.id, text(data, "code", 100))))
+      throw new NotAuthenticated("Invalid code");
+    await this.complete(ctx, id.user);
+  }
+  private async verifyCode(userId: number, code: string): Promise<boolean> {
+    return this.db.transaction(async (trx) => {
       const factors = await trx("nodepass_factors")
-        .where({ userId: id.user.id, confirmed: 1 })
+        .where({ userId, confirmed: 1 })
         .forUpdate();
       for (const factor of factors) {
         if (factor.kind === "recovery" && equal(factor.data, digest(code))) {
@@ -671,7 +805,7 @@ export class Auth {
         if (factor.kind === "totp") {
           const otp = new OTPAuth.TOTP({
             secret: this.vault
-              .unwrap(Buffer.from(factor.data, "base64"), `totp/${id.user.id}`)
+              .unwrap(Buffer.from(factor.data, "base64"), `totp/${userId}`)
               .toString(),
             algorithm: "SHA1",
             digits: 6,
@@ -689,8 +823,6 @@ export class Auth {
       }
       return false;
     });
-    if (!valid) throw new NotAuthenticated("Invalid code");
-    await this.complete(ctx, id.user);
   }
   private async complete(ctx: Context, user: User): Promise<void> {
     ctx.body = await this.viewer(await this.issue(ctx, user, true));
@@ -797,34 +929,44 @@ export class Auth {
         })
         .first();
       if (!factor) throw new NotAuthenticated("Invalid passkey");
-      const credential = JSON.parse(factor.data);
       const user = await this.user(factor.userId);
       if (user.isLdap && !(await this.directory(user)))
         throw new NotAuthenticated("Directory access denied");
-      const result = await verifyAuthenticationResponse({
-        response: response as AuthenticationResponseJSON,
-        expectedChallenge: pending.challenge,
-        expectedOrigin: this.config.publicUrl,
-        expectedRPID: this.config.rpId,
-        requireUserVerification: true,
-        credential: {
-          id: factor.credentialId,
-          publicKey: new Uint8Array(
-            Buffer.from(credential.publicKey, "base64"),
-          ),
-          counter: Number(factor.counter),
-          transports: credential.transports,
-        },
-      }).catch(() => {
+      if (
+        !(await this.verifyPasskey(
+          factor,
+          response as AuthenticationResponseJSON,
+          pending.challenge,
+        ))
+      )
         throw new NotAuthenticated("Invalid passkey");
-      });
-      if (!result.verified) throw new NotAuthenticated("Invalid passkey");
-      const changed = await this.db("nodepass_factors")
-        .where({ id: factor.id, counter: factor.counter })
-        .update({ counter: result.authenticationInfo.newCounter });
-      if (!changed) throw new NotAuthenticated("Retry passkey login");
       await this.complete(ctx, user);
     }
+  }
+  private async verifyPasskey(
+    factor: Row,
+    response: AuthenticationResponseJSON,
+    challenge: string,
+  ): Promise<boolean> {
+    const credential = JSON.parse(factor.data);
+    const result = await verifyAuthenticationResponse({
+      response: response as AuthenticationResponseJSON,
+      expectedChallenge: challenge,
+      expectedOrigin: this.config.publicUrl,
+      expectedRPID: this.config.rpId,
+      requireUserVerification: true,
+      credential: {
+        id: factor.credentialId,
+        publicKey: new Uint8Array(Buffer.from(credential.publicKey, "base64")),
+        counter: Number(factor.counter),
+        transports: credential.transports,
+      },
+    }).catch(() => null);
+    if (!result?.verified) return false;
+    const changed = await this.db("nodepass_factors")
+      .where({ id: factor.id, counter: factor.counter })
+      .update({ counter: result.authenticationInfo.newCounter });
+    return changed > 0;
   }
   async recovery(ctx: Context): Promise<void> {
     const id = await this.identity(ctx);

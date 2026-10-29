@@ -11,6 +11,12 @@ import { offlineUpdates } from "./offline-updates.js";
 import { database, type Row } from "../packages/server/src/db.js";
 import { isolatedDatabase } from "./database.js";
 import { legacyReference, seedLegacy } from "./legacy.js";
+import { serializePhp } from "./serialization.js";
+const legacyManagementProfile = serializePhp({
+  accView: true,
+  accViewPass: true,
+  mgmUsers: true,
+});
 const enabled = process.env.NODEPASS_INTEGRATION === "1";
 describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
   let runtime: Awaited<ReturnType<typeof createApp>>,
@@ -56,6 +62,9 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
       db = database(source.config);
     try {
       await seedLegacy(db);
+      await db("UserProfile")
+        .where({ id: 1 })
+        .update({ profile: legacyManagementProfile });
       const schema = JSON.parse(
         await readFile("packages/server/resources/schema.json", "utf8"),
       );
@@ -354,6 +363,12 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     const queued = await call("setup/migrate", payload);
     const finished = await wait(queued.value.job);
     expect(finished.state, JSON.stringify(finished)).toBe("complete");
+    expect(
+      (await runtime.db("UserProfile").where({ id: 1 }).first()).profile,
+    ).toEqual(Buffer.from(legacyManagementProfile));
+    const importedUser = await runtime.auth.user(2);
+    expect(importedUser.profile.mgmUsers).toBe(true);
+    expect(importedUser.profile).not.toHaveProperty("mgmUsersResetPassword");
     expect(finished.result.backup).toMatch(/\.npb$/);
     expect((await call("status")).value.setupRequired).toBe(false);
     expect((await call("setup/import", { dump })).response.status).toBe(403);

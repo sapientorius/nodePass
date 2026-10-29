@@ -3,6 +3,7 @@ import { audit, type Database, type Row } from "../db.js";
 import type { Vault } from "../security/vault.js";
 import { fieldModule } from "../compat/field-modules.js";
 import { identity, type ServiceParams } from "./accounts.js";
+import { lockUserManagement } from "./user-management.js";
 const hasKey = (row: Row | undefined): boolean =>
   !!row?.key && Buffer.from(row.key).length > 0;
 function hasValue(row: Row | undefined): boolean {
@@ -25,6 +26,7 @@ export class Fields {
       item: number,
       params: ServiceParams,
       action: FieldAction,
+      db?: Database,
     ) => Promise<void>,
   ) {}
   async list(
@@ -133,6 +135,12 @@ export class Fields {
       }
     }
     await this.db.transaction(async (trx) => {
+      if (["users", "profiles"].includes(module.catalogue)) {
+        await lockUserManagement(trx);
+        await this.authorize(module.id, itemId, params, "edit", trx);
+        if (encrypt)
+          await this.authorize(module.id, itemId, params, "editSecret", trx);
+      }
       const current = await trx("CustomFieldDefinition")
         .where({ id: definitionId })
         .forUpdate()
@@ -150,7 +158,7 @@ export class Fields {
         .where({ itemId, definitionId })
         .first();
       if (hasKey(row) && !encrypt)
-        await this.authorize(module.id, itemId, params, "editSecret");
+        await this.authorize(module.id, itemId, params, "editSecret", trx);
       if (!row) {
         const [id] = await trx("CustomFieldData").insert({
           moduleId: definition.moduleId,

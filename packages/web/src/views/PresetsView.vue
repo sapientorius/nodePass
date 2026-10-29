@@ -123,6 +123,7 @@ export default defineComponent({
       this.show = true;
     },
     async save() {
+      if (this.busy) return;
       await this.run(async () => {
         await api(
           `presets${this.editing ? "/" + this.editing : ""}`,
@@ -135,6 +136,7 @@ export default defineComponent({
       });
     },
     async remove(id: number) {
+      if (this.busy) return;
       await this.run(async () => {
         await api(`presets/${id}`, "DELETE");
         this.rows = await api("presets?all=true");

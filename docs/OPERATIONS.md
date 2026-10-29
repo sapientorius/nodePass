@@ -1,6 +1,6 @@
 # Operations
 
-[Documentation home](../README.md#documentation) · [Installation](INSTALLATION.md) · [Migration](MIGRATION.md)
+[Documentation home](../README.md#documentation) · [Installation](INSTALLATION.md) · [Updates and upgrades](UPGRADING.md) · [Migration](MIGRATION.md)
 
 ## Configuration and deployment boundaries
 
@@ -16,6 +16,10 @@ Use minimal integration privileges. A private CA can be supplied using Node's su
 
 Browser sessions use random server-side IDs with `HttpOnly`, production `Secure` and `SameSite=Strict` cookies. Mutations require the CSRF token from `/api/v1/auth/session` and the exact `Origin`. The authenticated route inventory is `/api/v1/openapi.json`; legacy behavior is described in [Compatibility](COMPATIBILITY.md#json-rpc-api).
 
+Ordinary user and permission-profile edits do not require another sign-in, including changes to login names, groups and profile permissions. Setting a password, blocking sign-in, or actually changing either administrator role ends every browser session of the affected user. Unchanged role flags do not trigger sign-out. The UI refreshes its session after saving users or profiles, when returning to the tab, and before its existing 60-second background poll. Permission changes are enforced by the server on the next authenticated request even before the UI refreshes. A detected access change closes open views and discards unsaved entries and displayed secrets while retaining account search filters, sorting and view preferences. Temporary refresh failures report an error without signing the user out; expired or revoked sessions still require sign-in. Session refresh does not renew absolute expiry or recent identity confirmation.
+
+Within an active session, sensitive user-management changes require identity confirmation within five minutes: password resets, actual changes to administrator roles, group/profile assignments or sign-in status, and profile writes. The confirmation dialog resumes the original submitted action. In Profiles, explicitly enable **Reset user passwords** as well as **Manage users** for delegated resets; existing nodePass and imported sysPass profiles default to no reset permission. Administrators remain protected from delegated edits. Disabled edit buttons explain the applicable user, group or profile boundary.
+
 LDAP/AD requires verified LDAPS or STARTTLS, a restricted bind user, base DN and optional group DN. Passwordless logins and active sessions recheck directory status/membership and fail closed during directory failure. Provisioned users receive only the selected default group/profile, without admin flags.
 
 Reverse-proxy SSO additionally requires a random shared signing secret. The proxy overwrites `X-NodePass-Identity` and `X-NodePass-Signature`. Identity is Base64url UTF-8 JSON containing exactly `login`, `timestamp` (Unix seconds) and `nonce` (at least 22 random Base64url characters). Signature is hexadecimal HMAC-SHA-256 of the **unchanged encoded identity header**, using the SSO secret as a UTF-8 key. Proofs expire after 60 seconds and work once. Existing users require explicit mapping; optional provisioning uses a selected profile. SSO does not replace mandatory MFA.
@@ -23,6 +27,8 @@ Reverse-proxy SSO additionally requires a random shared signing secret. The prox
 SMTP requires TLS with certificate validation. Syslog UDP sends sanitized events to the configured receiver; retries can produce duplicates and the local audit remains authoritative. Wiki calls use only the configured HTTPS endpoint, reject redirects and bound responses. Account URLs are never fetched for previews. Verify real network/certificate/permission behavior before release.
 
 ## Update notifications
+
+To install an update, follow [Updates and upgrades](UPGRADING.md), including release selection, platform-specific steps, backups and failure recovery.
 
 Application administrators can open **Versions & updates** at `/manage/updates`, also linked from update notices. The page shows the installed version, latest known version in the installation's Stable/RC channel, last successful check and expandable release information from the installed version onward. Reading or reopening the page uses the server cache and does not force a GitHub request. An unpublished installation version and an unknown latest version are explicitly identified.
 
@@ -90,7 +96,7 @@ Mount inputs read-only and make them readable only by app UID 65532. Keep sensit
 - For startup failures, check secret-file permissions, the deployment key, DB reachability and migration checksums. Do not print secret configuration.
 - For proxy-related 403 responses, verify `PUBLIC_URL`, immediate peer, `TRUSTED_PROXIES`, proxy DNS resolution from the app's network, HTTPS forwarding, Origin and CSRF. A missing/unresolvable proxy is denied until available. Do not bypass these checks by trusting every source.
 - A decryption error with a record ID requires investigating source data/historical keys; never replace it with empty data.
-- Before updating, test backup/restore, verify the exact commit/image and gate, restart in a maintenance window, then check readiness, authentication, permissions and secret access.
+- Follow [Updates and upgrades](UPGRADING.md) for the maintenance procedure, including Coolify/Dokploy image selection, backup/restore, startup migrations and post-update checks.
 - After an incomplete takeover, preserve the partial DB and restore the original backup separately before pointing sysPass at it. See [rollback](MIGRATION.md#verification-and-rollback).
 
 ## Release and hosting checks

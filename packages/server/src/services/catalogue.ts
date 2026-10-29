@@ -5,7 +5,14 @@ import { createHash, randomBytes } from "node:crypto";
 import { audit, type Database, type Row } from "../db.js";
 import { identity, integer, type ServiceParams } from "./accounts.js";
 import { checkStrength, hashPassword } from "../security/password.js";
-import { mapData, type Auth } from "../security/auth.js";
+import { mapData, Auth } from "../security/auth.js";
+import {
+  enabled,
+  userManagement,
+  assertUserEditable,
+  lockUserManagement,
+  managementParams,
+} from "./user-management.js";
 const tables: Record<
   string,
   { table: string; permission: string; fields: string[]; maxName: number }
@@ -68,7 +75,6 @@ const tables: Record<
     maxName: 100,
   },
 };
-const enabled = (value: unknown): boolean => value === true || value === 1;
 const permissionFlags = [
   "accView",
   "accViewPass",
@@ -88,6 +94,7 @@ const permissionFlags = [
   "configBackup",
   "configImport",
   "mgmUsers",
+  "mgmUsersResetPassword",
   "mgmGroups",
   "mgmProfiles",
   "mgmCategories",
@@ -125,18 +132,11 @@ export class Catalogue {
     const target = id
       ? await this.db("User").where({ id: id }).first()
       : undefined;
-    if (target && (target.isAdminApp || target.isAdminAcc))
-      throw new Forbidden("Administrator required");
     if (target) {
       const memberships = await this.db("UserToUserGroup").where({
         userId: target.id,
       });
-      if (
-        [target.userGroupId, ...memberships.map((m) => m.userGroupId)].some(
-          (group) => group !== user.userGroupId && !user.groups.includes(group),
-        )
-      )
-        throw new Forbidden("Cannot manage a user in another group");
+      target.groups = memberships.map((m) => m.userGroupId);
     }
     const targetProfile = target
       ? mapData(
@@ -147,12 +147,7 @@ export class Catalogue {
           ).profile,
         )
       : {};
-    if (
-      Object.entries(targetProfile).some(
-        ([key, value]) => enabled(value) && !enabled(user.profile[key]),
-      )
-    )
-      throw new Forbidden("Cannot manage a user with greater permissions");
+    if (target) assertUserEditable(userManagement(user, target, targetProfile));
   }
   async fieldAccess(
     id: number,
@@ -186,6 +181,7 @@ export class Catalogue {
                 "isAdminAcc",
                 "isLdap",
                 "groups",
+                "management",
               ]
             : []),
         ].map((k) => [k, row[k]]),
@@ -218,6 +214,14 @@ export class Catalogue {
         row.groups = memberships
           .filter((m) => m.userId === row.id)
           .map((m) => m.userGroupId);
+      const profiles = await this.db("UserProfile").select("id", "profile");
+      const mapped = new Map(profiles.map((p) => [p.id, mapData(p.profile)]));
+      for (const row of rows)
+        row.management = userManagement(
+          identity(params).user,
+          row,
+          mapped.get(row.userProfileId) ?? {},
+        );
     }
     return rows.map((r) => this.present(r, params));
   }
@@ -227,16 +231,26 @@ export class Catalogue {
       .where({ id: integer(id) })
       .first();
     if (!row) throw new NotFound("Item not found");
-    if (this.name === "users")
+    if (this.name === "users") {
       row.groups = (
         await this.db("UserToUserGroup").where({ userId: row.id })
       ).map((m) => m.userGroupId);
+      const profile = await this.db("UserProfile")
+        .where({ id: row.userProfileId })
+        .first();
+      row.management = userManagement(
+        identity(params).user,
+        row,
+        mapData(profile?.profile),
+      );
+    }
     return this.present(row, params);
   }
   private async input(
     raw: unknown,
     params: ServiceParams,
     existingId?: number,
+    preparedPassword?: string,
   ): Promise<Row> {
     this.manage(params);
     if (!raw || typeof raw !== "object" || Array.isArray(raw))
@@ -310,10 +324,16 @@ export class Catalogue {
           throw new Forbidden("Cannot grant access to another group");
       }
       if (data.password !== undefined) {
+        if (
+          existingId &&
+          !user.isAdminApp &&
+          !enabled(user.profile.mgmUsersResetPassword)
+        )
+          throw new Forbidden("Password reset permission required");
         if (typeof data.password !== "string")
           throw new BadRequest("Invalid password");
         checkStrength(data.password, await this.auth.policy());
-        data.pass = await hashPassword(data.password);
+        data.pass = preparedPassword ?? (await hashPassword(data.password));
         delete data.password;
       } else if (!existingId) throw new BadRequest("Password required");
       if (
@@ -403,9 +423,10 @@ export class Catalogue {
     return data;
   }
   async create(raw: unknown, params: ServiceParams = {}): Promise<Row> {
-    const data = await this.input(raw, params);
-    const { groups, ...row } = data;
+    const prepared = await this.input(raw, params);
     const [id] = await this.db.transaction(async (trx) => {
+      const data = await this.authorizedInput(trx, raw, params, prepared);
+      const { groups, ...row } = data;
       const [id] = await trx(this.definition.table).insert(row);
       if (groups)
         for (const group of groups)
@@ -414,15 +435,25 @@ export class Catalogue {
             userGroupId: group,
           });
       await audit(trx, identity(params).user.id, `${this.name}.create`, id);
+      if (this.name === "users")
+        await this.auditUserChanges(trx, params, id!, {}, data);
       return [id];
     });
     return this.get(id!, params);
   }
   async patch(id: Id, raw: unknown, params: ServiceParams = {}): Promise<Row> {
     const target = integer(id),
-      data = await this.input(raw, params, target),
-      { groups, ...row } = data;
+      prepared = await this.input(raw, params, target);
     await this.db.transaction(async (trx) => {
+      const data = await this.authorizedInput(
+        trx,
+        raw,
+        params,
+        prepared,
+        target,
+      );
+      const { groups, ...row } = data;
+      let revokeSessions = false;
       if (this.name === "fields") {
         const previous = await trx("CustomFieldDefinition")
           .where({ id: target })
@@ -443,6 +474,20 @@ export class Catalogue {
         const admins = await trx("User")
           .where({ isAdminApp: 1, isDisabled: 0 })
           .forUpdate();
+        const previous = await trx("User")
+          .where({ id: target })
+          .forUpdate()
+          .first();
+        if (!previous) throw new NotFound("Item not found");
+        await this.auditUserChanges(trx, params, target, previous, data);
+        revokeSessions =
+          data.pass !== undefined ||
+          data.isDisabled === 1 ||
+          ["isAdminApp", "isAdminAcc"].some(
+            (key) =>
+              data[key] !== undefined &&
+              enabled(data[key]) !== enabled(previous[key]),
+          );
         if (
           admins.length === 1 &&
           admins[0].id === target &&
@@ -464,21 +509,88 @@ export class Catalogue {
             userGroupId: group,
           });
       }
-      if (this.name === "users")
+      if (revokeSessions)
         await trx("nodepass_sessions").where({ userId: target }).delete();
-      if (this.name === "profiles") {
-        const users = await trx("User").where({ userProfileId: target });
-        if (users.length)
-          await trx("nodepass_sessions")
-            .whereIn(
-              "userId",
-              users.map((u) => u.id),
-            )
-            .delete();
-      }
       await audit(trx, identity(params).user.id, `${this.name}.edit`, target);
     });
     return this.get(target, params);
+  }
+  private async authorizedInput(
+    db: Database,
+    raw: unknown,
+    params: ServiceParams,
+    prepared: Row,
+    target?: number,
+  ): Promise<Row> {
+    if (!["users", "profiles"].includes(this.name)) return prepared;
+    await lockUserManagement(db);
+    const current = await managementParams(db, this.auth, params);
+    const catalogue = new Catalogue(
+      db,
+      this.name,
+      new Auth(db, this.auth.config, this.auth.vault),
+    );
+    const data = await catalogue.input(raw, current, target, prepared.pass);
+    if (this.name === "profiles") this.auth.requireRecent(identity(current));
+    else {
+      const previous = target
+        ? await db("User").where({ id: target }).first()
+        : undefined;
+      if (target && !previous) throw new NotFound("Item not found");
+      const memberships = target
+        ? await db("UserToUserGroup").where({ userId: target })
+        : [];
+      const normalize = (groups: number[], primary: number) =>
+        JSON.stringify(
+          [...new Set(groups.filter((g) => g !== primary))].sort(
+            (a, b) => a - b,
+          ),
+        );
+      const sensitive = previous
+        ? data.pass !== undefined ||
+          ["isAdminApp", "isAdminAcc", "isDisabled"].some(
+            (key) =>
+              data[key] !== undefined &&
+              enabled(data[key]) !== enabled(previous[key]),
+          ) ||
+          ["userGroupId", "userProfileId"].some(
+            (key) => data[key] !== previous[key],
+          ) ||
+          (data.groups !== undefined &&
+            normalize(data.groups, data.userGroupId) !==
+              normalize(
+                memberships.map((m) => m.userGroupId),
+                previous.userGroupId,
+              ))
+        : enabled(data.isAdminApp) || enabled(data.isAdminAcc);
+      if (sensitive) this.auth.requireRecent(identity(current));
+    }
+    return data;
+  }
+  private async auditUserChanges(
+    db: Database,
+    params: ServiceParams,
+    target: number,
+    previous: Row,
+    data: Row,
+  ): Promise<void> {
+    for (const [key, role] of [
+      ["isAdminApp", "app"],
+      ["isAdminAcc", "account"],
+    ]) {
+      if (
+        data[key!] !== undefined &&
+        enabled(data[key!]) !== enabled(previous[key!])
+      )
+        await audit(
+          db,
+          identity(params).user.id,
+          `users.role.${role}.${Number(enabled(previous[key!]))}_to_${Number(enabled(data[key!]))}`,
+          target,
+        );
+    }
+    if (previous.id && data.pass !== undefined)
+      await audit(db, identity(params).user.id, "users.password.reset", target);
   }
   async remove(id: Id, params: ServiceParams = {}): Promise<{ id: number }> {
     this.manage(params);

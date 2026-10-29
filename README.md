@@ -56,17 +56,18 @@ Stopping preserves data and generated secrets. The preview uses its own Compose 
 
 ## Documentation
 
-| Guide                                  | Use it for                                                            |
-| -------------------------------------- | --------------------------------------------------------------------- |
-| [Installation](docs/INSTALLATION.md)   | Preview, fresh installation, Docker Compose, Coolify and Dokploy      |
-| [Migration](docs/MIGRATION.md)         | Existing configuration/database, SQL dumps, preflight and recovery    |
-| [Operations](docs/OPERATIONS.md)       | Configuration, integrations, backup/restore, key rotation and updates |
-| [Releases](docs/RELEASES.md)           | Release candidates, verified images, publication and upgrade policy   |
-| [Features](docs/FEATURES.md)           | Inherited, modernized and added capabilities                          |
-| [Compatibility](docs/COMPATIBILITY.md) | Tested reference version, formats and legacy API behavior             |
-| [Security model](docs/SECURITY.md)     | Trust boundaries, controls and documented limitations                 |
-| [Contributing](CONTRIBUTING.md)        | Development, tests and verification requirements                      |
-| [Security policy](SECURITY.md)         | Confidential vulnerability reporting                                  |
+| Guide                                     | Use it for                                                            |
+| ----------------------------------------- | --------------------------------------------------------------------- |
+| [Installation](docs/INSTALLATION.md)      | Preview, fresh installation, Docker Compose, Coolify and Dokploy      |
+| [Updates and upgrades](docs/UPGRADING.md) | Release selection, Coolify/Dokploy/Compose updates and recovery       |
+| [Migration](docs/MIGRATION.md)            | Existing configuration/database, SQL dumps, preflight and recovery    |
+| [Operations](docs/OPERATIONS.md)          | Configuration, integrations, backup/restore, key rotation and updates |
+| [Releases](docs/RELEASES.md)              | Release candidates, verified images, publication and upgrade policy   |
+| [Features](docs/FEATURES.md)              | Inherited, modernized and added capabilities                          |
+| [Compatibility](docs/COMPATIBILITY.md)    | Tested reference version, formats and legacy API behavior             |
+| [Security model](docs/SECURITY.md)        | Trust boundaries, controls and documented limitations                 |
+| [Contributing](CONTRIBUTING.md)           | Development, tests and verification requirements                      |
+| [Security policy](SECURITY.md)            | Confidential vulnerability reporting                                  |
 
 ## Technology
 
@@ -83,7 +84,7 @@ All browser assets are served locally. There are no CDNs, remote fonts, external
 
 ## Status and security responsibilities
 
-nodePass is version **0.1.3**. Implemented features and historical local testing do not constitute a production approval. Before deployment, require **Required release checks** (`release-gate`) to pass on the exact commit, test migration and restore with a representative copy of your own data, and validate your real integrations and proxy configuration. Automated scanners are not an independent security audit. No independent external security audit is claimed.
+nodePass is version **0.1.4**. Implemented features and historical local testing do not constitute a production approval. Before deployment, require **Required release checks** (`release-gate`) to pass on the exact commit, test migration and restore with a representative copy of your own data, and validate your real integrations and proxy configuration. Automated scanners are not an independent security audit. No independent external security audit is claimed.
 
 nodePass is **not end-to-end encrypted**. The running server can decrypt secrets for authorized operations. The application host, deployment key and operators with infrastructure access are part of the trust boundary. Keep keys separate from backups and protect the host accordingly.
 

@@ -35,6 +35,8 @@ export function openApi(
     for (const method of route.methods) {
       if (["HEAD", "OPTIONS"].includes(method)) continue;
       const write = !["GET", "HEAD"].includes(method),
+        users = path === "/api/v1/users" || path === "/api/v1/users/{id}",
+        confirmation = path === "/api/v1/auth/confirm",
         account =
           path === "/api/v1/accounts" || path === "/api/v1/accounts/{id}";
       item[method.toLowerCase()] = {
@@ -60,9 +62,47 @@ export function openApi(
                 required: true,
                 content: {
                   "application/json": {
-                    schema: account
-                      ? { $ref: "#/components/schemas/AccountInput" }
-                      : { type: "object", additionalProperties: true },
+                    schema: confirmation
+                      ? {
+                          oneOf: [
+                            {
+                              type: "object",
+                              required: ["password"],
+                              properties: {
+                                password: {
+                                  type: "string",
+                                  minLength: 1,
+                                  maxLength: 4096,
+                                },
+                              },
+                              additionalProperties: false,
+                            },
+                            {
+                              type: "object",
+                              required: ["code"],
+                              properties: {
+                                code: {
+                                  type: "string",
+                                  minLength: 1,
+                                  maxLength: 100,
+                                },
+                              },
+                              additionalProperties: false,
+                            },
+                            {
+                              type: "object",
+                              required: ["challenge", "response"],
+                              properties: {
+                                challenge: { type: "string" },
+                                response: { type: "object" },
+                              },
+                              additionalProperties: false,
+                            },
+                          ],
+                        }
+                      : account
+                        ? { $ref: "#/components/schemas/AccountInput" }
+                        : { type: "object", additionalProperties: true },
                   },
                 },
               },
@@ -72,11 +112,29 @@ export function openApi(
           "200": {
             description:
               "Operation completed; responses never include password hashes or vault keys.",
+            ...(users
+              ? {
+                  content: {
+                    "application/json": {
+                      schema:
+                        method === "GET" && path === "/api/v1/users"
+                          ? {
+                              type: "array",
+                              items: {
+                                $ref: "#/components/schemas/UserSummary",
+                              },
+                            }
+                          : { $ref: "#/components/schemas/UserSummary" },
+                    },
+                  },
+                }
+              : {}),
           },
           "400": { description: "Input validation failed" },
           "401": { description: "Authentication required" },
           "403": {
-            description: "Operation denied or MFA/reconfirmation required",
+            description:
+              "Operation denied or MFA required. MFA_REQUIRED requires multi-factor verification or enrollment. REAUTHENTICATION_REQUIRED requests confirmation of the current session; CONFIRMATION_INVALID rejects confirmation credentials without ending the session.",
           },
           "404": { description: "Resource unavailable" },
           "409": { description: "Version conflict" },
@@ -99,7 +157,40 @@ export function openApi(
       securitySchemes: {
         session: { type: "apiKey", in: "cookie", name: "nodepass" },
       },
-      schemas: { AccountInput: accountInput },
+      schemas: {
+        AccountInput: accountInput,
+        UserSummary: {
+          type: "object",
+          description:
+            "Management metadata is returned only to application administrators or users with mgmUsers. It is read-only; writes always recheck current authorization.",
+          properties: {
+            management: { $ref: "#/components/schemas/UserManagement" },
+          },
+        },
+        UserManagement: {
+          type: "object",
+          readOnly: true,
+          required: ["canEdit", "canResetPassword"],
+          properties: {
+            canEdit: { type: "boolean" },
+            canResetPassword: {
+              type: "boolean",
+              description:
+                "Requires application administrator status or both mgmUsers and mgmUsersResetPassword, plus target scope. Missing reset permission is denied.",
+            },
+            reason: {
+              type: "string",
+              enum: [
+                "permission",
+                "self",
+                "administrator",
+                "groups",
+                "profile",
+              ],
+            },
+          },
+        },
+      },
     },
   };
 }

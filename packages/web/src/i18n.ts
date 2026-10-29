@@ -1,4 +1,7 @@
 import { createI18n } from "vue-i18n";
+import { confirmationMessages } from "./confirmation-translations";
+import { sessionMessages } from "./session-translations";
+import { profilePermissionMessages } from "./profile-permission-translations";
 import { updateMessages } from "./update-translations";
 import { releaseMessages } from "./release-translations";
 import type { Language } from "@nodepass/contracts";
@@ -13,6 +16,7 @@ import { setupMigrationMessages } from "./setup-migration-translations";
 import { shareMessages } from "./share-translations";
 import { userGroupMessages } from "./user-group-translations";
 import { accountAccessMessages } from "./account-access-translations";
+import { userManagementMessages } from "./user-management-translations";
 export const languageOptions = [
   { label: "Deutsch", value: "de_DE" },
   { label: "English", value: "en_US" },
@@ -101,6 +105,10 @@ export const messages = Object.fromEntries(
         ...releaseMessages[locale],
         ...userGroupMessages[locale],
         ...accountAccessMessages[locale],
+        ...profilePermissionMessages[locale],
+        ...userManagementMessages[locale],
+        ...confirmationMessages[locale],
+        ...sessionMessages[locale],
         backToLogin: backToLoginLabels[locale as Language],
       },
     ];

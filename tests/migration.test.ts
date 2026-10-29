@@ -19,6 +19,12 @@ import { Auth } from "../packages/server/src/security/auth.js";
 import { Accounts } from "../packages/server/src/services/accounts.js";
 import { jsonRpc } from "../packages/server/src/compat/jsonrpc.js";
 import type { Context } from "koa";
+import { serializePhp } from "./serialization.js";
+const legacyManagementProfile = serializePhp({
+  accView: true,
+  accViewPass: true,
+  mgmUsers: true,
+});
 const enabled = process.env.NODEPASS_INTEGRATION === "1",
   reference = JSON.parse(
     readFileSync(new URL("fixtures/reference.json", import.meta.url), "utf8"),
@@ -44,6 +50,9 @@ describe.skipIf(!enabled)(
       drop = isolated.drop;
       db = database(config);
       await seedLegacy(db);
+      await db("UserProfile")
+        .where({ id: 1 })
+        .update({ profile: legacyManagementProfile });
       vault = new Vault(db, config.deploymentKey);
       migration = new Migration(db, vault, config);
     });
@@ -86,6 +95,12 @@ describe.skipIf(!enabled)(
         })
       ).backup;
       expect(await getSetting(db, "initialized", false)).toBe(true);
+      expect(
+        (await db("UserProfile").where({ id: 1 }).first()).profile,
+      ).toEqual(Buffer.from(legacyManagementProfile));
+      const importedUser = await new Auth(db, config, vault).user(2);
+      expect(importedUser.profile.mgmUsers).toBe(true);
+      expect(importedUser.profile).not.toHaveProperty("mgmUsersResetPassword");
       const account = await db("Account").where({ id: 1 }).first();
       expect(
         (await vault.decrypt(account.pass, account.key, "Account/1/pass"))

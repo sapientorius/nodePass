@@ -17,6 +17,8 @@ This is a **one-time transition**. Stop sysPass and all old writers before migra
 7. Run preflight and migration. Unknown schema or undecryptable data stops migration with affected record identifiers.
 8. Enroll the first administrator's MFA, compare secrets and denied/allowed permissions, test integrations and legacy clients, then enable normal access.
 
+User management has a separate nodePass password-reset permission, `mgmUsersResetPassword`. Existing sysPass profiles are preserved and do not receive this permission automatically, even when `mgmUsers` is enabled. After migration, an application administrator can explicitly enable it for selected profiles. Both rights are required for delegated password resets. Application administrators retain access, and the setup/import administrator check continues to use the existing sysPass application-admin role and credentials; it does not require the new permission or a pre-existing nodePass session.
+
 The master password is checked once and retained encrypted in the server keyring. Users do not need it afterward. This is not end-to-end encryption: the running server can decrypt authorized secrets.
 
 ## Direct connection to the existing database

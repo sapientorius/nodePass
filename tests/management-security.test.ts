@@ -38,7 +38,11 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         await profiles.create(
           {
             name: "Scoped manager",
-            profile: { mgmUsers: true, accView: true },
+            profile: {
+              mgmUsers: true,
+              mgmUsersResetPassword: true,
+              accView: true,
+            },
           },
           p,
         )

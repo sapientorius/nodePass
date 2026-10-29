@@ -93,6 +93,6 @@ From a source checkout, the equivalent is to set `NODEPASS_IMAGE` to the verifie
 
 ## Update and maintenance
 
-Before updating, read the version's compatibility notes, back up the database and required historical keys, and rehearse restore. Use one application process, stop writers during migration, and check readiness, MFA, permissions, secret access and backups after startup. Returning to a pre-migration state requires the matching backup and keys; image replacement alone is not a database rollback.
+Follow [Updates and upgrades](UPGRADING.md) to update an existing installation. It covers selecting `NODEPASS_IMAGE` in Coolify/Dokploy, the one-time adjustment for archive-pinned Compose files, maintenance, backups, automatic startup migrations, verification and recovery. Returning to a pre-migration state requires the matching backup and keys; image replacement alone is not a database rollback.
 
 Verification runs weekly against main with current npm/Trivy vulnerability data. Dependabot proposes reviewed updates for npm, Actions and Dockerfile images; it does not automatically merge them. Pinned scanner/rule references and Compose/service image digests also require maintainer review and complete CI. Expiring exceptions produce advance warnings and block verification at expiry; renewal requires a fresh assessment, owner and exact scope.

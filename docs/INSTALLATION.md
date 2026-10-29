@@ -1,6 +1,6 @@
 # Installation
 
-[Documentation home](../README.md#documentation) · [Migration](MIGRATION.md) · [Operations](OPERATIONS.md)
+[Documentation home](../README.md#documentation) · [Updates and upgrades](UPGRADING.md) · [Migration](MIGRATION.md) · [Operations](OPERATIONS.md)
 
 ## Requirements
 
@@ -99,7 +99,7 @@ Back up `secrets/deployment-key` separately from encrypted backups. Setup change
 
 ## Coolify
 
-Create a **Docker Compose Empty** Service and paste `docker-compose.coolify.yml` into **Edit Compose File**. The repository template pulls the verified published **0.1.2** image by digest; it needs no Git checkout, Dockerfile or build context. Release archives contain the matching release's image instead. Set `NODEPASS_IMAGE` only when selecting another verified release digest.
+Create a **Docker Compose Empty** Service and paste `docker-compose.coolify.yml` into **Edit Compose File**. The repository template pulls a published image by digest; its header identifies the default version. It needs no Git checkout, Dockerfile or build context. Release archives contain the matching release's image instead. The repository template supports `NODEPASS_IMAGE` for selecting another verified release digest; an archive's literal image needs a one-time adjustment to use that variable. Follow [Coolify updates](UPGRADING.md#coolify) for the complete procedure.
 
 Assign the HTTPS domain to service **app**, port **3000**, through Coolify's domain configuration. Set `PUBLIC_URL` to that exact origin.
 
@@ -139,7 +139,7 @@ From a source checkout, create an import payload for an already published and ve
 npm run --silent deploy:dokploy -- ghcr.io/sapientorius/nodepass@sha256:REPLACE_WITH_VERIFIED_DIGEST
 ```
 
-The repository's `docker-compose.dokploy.yml` also pulls the verified published 0.1.2 image by default and works without source files. When using that YAML directly, provision the four secrets in Dokploy's environment settings (`DEPLOYMENT_KEY`, `SETUP_TOKEN`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`); template generators run only through import.
+The repository's `docker-compose.dokploy.yml` also pulls a published image by digest; its header identifies the default version. It works without source files. When using that YAML directly, provision the four secrets in Dokploy's environment settings (`DEPLOYMENT_KEY`, `SETUP_TOKEN`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`); template generators run only through import. Follow [Dokploy updates](UPGRADING.md#dokploy) for an existing installation.
 
 For intentional Git-based source builds, combine `docker-compose.dokploy.yml` followed by `docker-compose.build.yml`, with context **`.`** at the repository root. The override requires a real source checkout containing the Dockerfile.
 

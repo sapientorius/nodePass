@@ -1,6 +1,6 @@
 {
   "name": "nodepass",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Self-hosted sysPass successor with a Feathers 5 API and Vue 3 UI",
   "license": "GPL-3.0-or-later",

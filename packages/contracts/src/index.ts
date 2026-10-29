@@ -20,6 +20,10 @@ export const languages = [
 ] as const;
 export type Language = (typeof languages)[number];
 export type MfaPolicy = "optional" | "admins" | "everyone";
+export type ConfirmationMethod = "password" | "totp" | "recovery" | "passkey";
+export interface ConfirmationMethods {
+  methods: ConfirmationMethod[];
+}
 export interface SecurityPolicy {
   mfa: MfaPolicy;
   minLength: number;
@@ -35,6 +39,7 @@ export const defaultPolicy: SecurityPolicy = {
   sessionAbsoluteSeconds: 28800,
 };
 export interface Viewer {
+  accessRevision: string;
   id: number;
   name: string;
   login: string;
@@ -48,6 +53,11 @@ export interface Viewer {
   needsMfa: boolean;
   csrf: string;
   permissions: Record<string, boolean>;
+}
+export interface UserManagement {
+  canEdit: boolean;
+  canResetPassword: boolean;
+  reason?: "permission" | "self" | "administrator" | "groups" | "profile";
 }
 export interface Account {
   id: number;

@@ -54,6 +54,7 @@ import { Tokens, Presets } from "./services/management.js";
 import { openApi } from "./openapi.js";
 import { token } from "./security/crypto.js";
 import { mapData } from "./compat/data.js";
+import { managementParams } from "./services/user-management.js";
 
 export async function createApp(
   config: Config,
@@ -68,42 +69,49 @@ export async function createApp(
     migration = new Migration(db, vault, config),
     transfer = new Transfer(db, auth, accounts),
     integrations = new Integrations(db, vault, config.legacy);
-  const fields = new Fields(db, vault, async (moduleId, itemId, p, action) => {
-    if (moduleId === 1) {
-      await accounts.access(itemId, p, action);
-      return;
-    }
-    const module = fieldModule(moduleId),
-      user = p.identity!.user,
-      write = action === "edit" || action === "editSecret";
-    if (module.id === 1001) {
-      const row = await db("AuthToken").where({ id: itemId }).first();
+  const fields = new Fields(
+    db,
+    vault,
+    async (moduleId, itemId, p, action, transaction) => {
+      if (moduleId === 1) {
+        await accounts.access(itemId, p, action);
+        return;
+      }
+      const module = fieldModule(moduleId);
+      const scopedDb = transaction ?? db;
+      if (transaction && ["users", "profiles"].includes(module.catalogue))
+        p = await managementParams(transaction, auth, p);
+      const user = p.identity!.user,
+        write = action === "edit" || action === "editSecret";
+      if (module.id === 1001) {
+        const row = await db("AuthToken").where({ id: itemId }).first();
+        if (
+          !row ||
+          (!user.isAdminApp &&
+            (row.userId !== user.id ||
+              (user.profile.mgmApiTokens !== true &&
+                user.profile.mgmApiTokens !== 1)))
+        )
+          throw new Forbidden("Token unavailable");
+      } else
+        await new Catalogue(scopedDb, module.catalogue, auth).fieldAccess(
+          itemId,
+          p,
+          write,
+        );
       if (
-        !row ||
-        (!user.isAdminApp &&
-          (row.userId !== user.id ||
-            (user.profile.mgmApiTokens !== true &&
-              user.profile.mgmApiTokens !== 1)))
+        (action === "secret" &&
+          !user.isAdminApp &&
+          user.profile.accViewPass !== true &&
+          user.profile.accViewPass !== 1) ||
+        (action === "editSecret" &&
+          !user.isAdminApp &&
+          user.profile.accEditPass !== true &&
+          user.profile.accEditPass !== 1)
       )
-        throw new Forbidden("Token unavailable");
-    } else
-      await new Catalogue(db, module.catalogue, auth).fieldAccess(
-        itemId,
-        p,
-        write,
-      );
-    if (
-      (action === "secret" &&
-        !user.isAdminApp &&
-        user.profile.accViewPass !== true &&
-        user.profile.accViewPass !== 1) ||
-      (action === "editSecret" &&
-        !user.isAdminApp &&
-        user.profile.accEditPass !== true &&
-        user.profile.accEditPass !== 1)
-    )
-      throw new Forbidden("Custom-field secret permission required");
-  });
+        throw new Forbidden("Custom-field secret permission required");
+    },
+  );
   if (await db.schema.hasTable("nodepass_migrations")) {
     await migrate(db);
     await vault.load();
@@ -237,6 +245,14 @@ export async function createApp(
           ctx.status < 500
             ? (e.message ?? "Request failed")
             : "The request could not be completed",
+        ...(error instanceof Forbidden &&
+        [
+          "REAUTHENTICATION_REQUIRED",
+          "CONFIRMATION_INVALID",
+          "MFA_REQUIRED",
+        ].includes(error.data?.code)
+          ? { code: error.data.code }
+          : {}),
       };
       if (ctx.status >= 500)
         console.error(
@@ -570,29 +586,17 @@ export async function createApp(
     requireReady();
     await auth.recovery(ctx);
   });
+  router.get("/api/v1/auth/confirm", async (ctx) => {
+    requireReady();
+    await auth.confirmationMethods(ctx);
+  });
   router.post("/api/v1/auth/confirm", async (ctx) => {
-    const p = await params(ctx),
-      id = p.identity!,
-      data = body(ctx);
-    exact(data, ["password"]);
-    const factors = await db("nodepass_factors")
-      .where({ userId: id.user.id, confirmed: 1 })
-      .first();
-    if (factors)
-      throw new Forbidden("Use your passkey or TOTP code to confirm");
-    const row = await db("User").where({ id: id.user.id }).first();
-    await auth.limit("confirm", String(id.user.id));
-    if (
-      !(await verifyPassword(
-        text(data, "password", 4096),
-        Buffer.from(row.pass).toString(),
-      ))
-    )
-      throw new Forbidden("Invalid credentials");
-    await db("nodepass_sessions")
-      .where({ id: id.session.id })
-      .update({ verifiedAt: Date.now() });
-    ctx.body = { confirmed: true };
+    requireReady();
+    await auth.confirm(ctx);
+  });
+  router.post("/api/v1/auth/confirm/passkey-options", async (ctx) => {
+    requireReady();
+    await auth.confirmationOptions(ctx);
   });
   router.get("/api/v1/auth/factors", async (ctx) => {
     const id = (await params(ctx)).identity!;
