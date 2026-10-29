@@ -149,6 +149,12 @@ export default defineComponent({
       return String(this.$route.params.section);
     },
     columns() {
+      const eventTitles: Record<string, string> = {
+        date: "eventDate",
+        action: "eventAction",
+        userId: "eventActor",
+        target: "eventTarget",
+      };
       const keys =
         this.section === "events"
           ? ["date", "action", "userId", "target"]
@@ -166,10 +172,24 @@ export default defineComponent({
             ["name", "login"].includes(k)
               ? k
               : this.section === "events"
-                ? "events"
+                ? eventTitles[k]!
                 : "notes",
           ),
           key: k,
+          ...(this.section === "events" && ["userId", "target"].includes(k)
+            ? {
+                render: (row: any) => {
+                  const value = row[k];
+                  const login =
+                    k === "userId" ? row.userLogin : row.targetUserLogin;
+                  return value == null
+                    ? ""
+                    : login
+                      ? `${value} (${login})`
+                      : String(value);
+                },
+              }
+            : {}),
           ...(this.section === "events" && k === "action"
             ? {
                 render: (row: any) => {
@@ -618,15 +638,22 @@ export default defineComponent({
         }}</n-button>
       </div></n-card
     >
-    <n-data-table
+    <div
       v-else
-      :columns="columns"
-      :data="rows"
-      :scroll-x="section === 'users' ? 700 : undefined"
-      :loading="busy"
-      :bordered="false"
-      :row-key="(row: any) => row.id"
-    />
+      :class="{ 'activity-table-scroll': section === 'events' }"
+      :tabindex="section === 'events' ? 0 : undefined"
+      :role="section === 'events' ? 'region' : undefined"
+      :aria-label="section === 'events' ? $t('events') : undefined"
+    >
+      <n-data-table
+        :columns="columns"
+        :data="rows"
+        :scroll-x="section === 'users' ? 700 : undefined"
+        :loading="busy"
+        :bordered="false"
+        :row-key="(row: any) => row.id"
+      />
+    </div>
     <n-modal
       v-model:show="show"
       preset="card"
@@ -818,6 +845,16 @@ export default defineComponent({
   </section>
 </template>
 <style scoped>
+.activity-table-scroll {
+  overflow-x: auto;
+}
+.activity-table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.activity-table-scroll > .n-data-table {
+  min-width: 700px;
+}
 :global(.account-modal.profile-modal) {
   width: min(780px, calc(100vw - 28px));
 }

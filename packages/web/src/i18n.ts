@@ -1,6 +1,7 @@
 import { createI18n } from "vue-i18n";
 import { confirmationMessages } from "./confirmation-translations";
 import { sessionMessages } from "./session-translations";
+import { eventMessages } from "./event-translations";
 import { profilePermissionMessages } from "./profile-permission-translations";
 import { updateMessages } from "./update-translations";
 import { releaseMessages } from "./release-translations";
@@ -109,6 +110,7 @@ export const messages = Object.fromEntries(
         ...userManagementMessages[locale],
         ...confirmationMessages[locale],
         ...sessionMessages[locale],
+        ...eventMessages[locale],
         backToLogin: backToLoginLabels[locale as Language],
       },
     ];

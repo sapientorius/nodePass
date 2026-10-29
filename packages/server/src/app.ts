@@ -877,20 +877,48 @@ export async function createApp(
       (ctx.query.legacy !== undefined && ctx.query.legacy !== "true")
     )
       throw new BadRequest("Invalid event query");
-    if (ctx.query.legacy === "true") {
-      ctx.body = (
-        await db("EventLog")
-          .select("id", "date", "action", "userId", "description")
-          .orderBy("id", "desc")
-          .limit(200)
-      ).map((row) => ({
-        ...row,
-        date: new Date(row.date * 1000).toISOString(),
-        target: row.description,
-      }));
-      return;
-    }
-    ctx.body = await db("nodepass_audit").orderBy("id", "desc").limit(200);
+    const legacy = ctx.query.legacy === "true";
+    const rows = legacy
+      ? (
+          await db("EventLog")
+            .select(
+              "id",
+              "date",
+              "action",
+              "userId",
+              "description",
+              "login as userLogin",
+            )
+            .orderBy("id", "desc")
+            .limit(200)
+        ).map((row) => ({
+          ...row,
+          date: new Date(row.date * 1000).toISOString(),
+          target: row.description,
+        }))
+      : await db("nodepass_audit").orderBy("id", "desc").limit(200);
+    const targetUserId = (row: { action: string; target: unknown }) => {
+      const id = Number(row.target);
+      return !legacy &&
+        (row.action.startsWith("users.") ||
+          ["token.create", "auth.emergency.recovery"].includes(row.action)) &&
+        /^[1-9]\d*$/.test(String(row.target)) &&
+        Number.isSafeInteger(id)
+        ? id
+        : null;
+    };
+    const userIds = [
+      ...new Set(rows.flatMap((row) => [row.userId, targetUserId(row)])),
+    ].filter((id): id is number => Number.isSafeInteger(id) && id > 0);
+    const users = await db("User").select("id", "login").whereIn("id", userIds);
+    const logins = new Map<number, string>(
+      users.map((user) => [user.id, user.login]),
+    );
+    ctx.body = rows.map((row) => ({
+      ...row,
+      userLogin: row.userLogin || logins.get(row.userId) || null,
+      targetUserLogin: logins.get(targetUserId(row) ?? 0) ?? null,
+    }));
   });
   router.get("/api/v1/updates", async (ctx) => {
     const id = await admin(ctx);
