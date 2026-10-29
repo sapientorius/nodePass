@@ -2,6 +2,26 @@
 
 Versions before 1.0 may include breaking changes in minor releases. Patch releases contain compatible fixes. Release candidates are intended for evaluation with synthetic data or a separate representative copy.
 
+## [0.1.4]
+
+### Added
+
+- Sensitive actions can request identity confirmation with a registered passkey, TOTP or recovery code, or a password when no second factor is registered. Pending forms are preserved for an explicit retry after confirmation.
+- Permission profiles show translated descriptions, and user management explains which users can be edited or have their passwords reset.
+- Expanded browser and database regression coverage for identity confirmation, session changes and delegated user management.
+
+### Changed
+
+- Ordinary user metadata, group and profile edits preserve browser sessions. Authorization uses current database permissions on every request, and the interface clears open views, displayed secrets and unsaved changes when access changes. Password resets, disabling a user and effective administrator-role changes revoke that user's browser sessions.
+- Delegated password resets require both user-management and password-reset permissions. Sensitive user and profile changes require recent identity confirmation; management writes recheck authorization inside a shared transaction lock and record explicit role-change and password-reset audit events.
+- Required multi-factor authentication opens the verification or enrollment flow without automatically repeating the denied action. Upgrade documentation now covers existing Coolify, Dokploy and Compose installations.
+
+### Compatibility and upgrade notes
+
+- No database schema change is introduced. Preserve existing secrets, persistent volumes and historical backup keys, and use the release's verified image digest when updating.
+- Review delegated user-manager profiles: a missing password-reset permission denies resets, including for imported sysPass profiles. Application administrators retain reset access. Ordinary metadata edits do not require renewed identity confirmation.
+- The cumulative security catalogue retains NP-2026-001 and NP-2026-002 from version 0.1.3; this release adds no new advisory identifiers.
+
 ## [0.1.3]
 
 ### Added
