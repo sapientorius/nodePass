@@ -86,6 +86,7 @@ export async function jsonRpc(
   ctx: Context,
   auth: Auth,
   accounts: Accounts,
+  managedBackups?: import("../services/backups.js").Backups,
 ): Promise<void> {
   let id: unknown = null;
   try {
@@ -277,12 +278,19 @@ export async function jsonRpc(
           throw new BadRequest(
             "Only the managed backup directory is supported",
           );
-        result = await backup(
-          auth.db,
-          resolve(auth.config.dataDir, "backups"),
-          auth.config.deploymentKey,
-          { legacy: auth.config.legacy },
-        );
+        if (managedBackups) {
+          const job = await managedBackups.create(user.id);
+          await managedBackups.wait();
+          const completed = await managedBackups.job(job.id);
+          if (completed?.state !== "complete") throw new Error("Backup failed");
+          result = completed.name;
+        } else
+          result = await backup(
+            auth.db,
+            resolve(auth.config.dataDir, "backups"),
+            auth.config.deploymentKey,
+            { legacy: auth.config.legacy },
+          );
         message = "Backup process finished";
       }
     } else {

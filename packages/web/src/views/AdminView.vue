@@ -1,5 +1,5 @@
 <script lang="ts">
-import { defineComponent, h } from "vue";
+import { defineComponent, h, type VNode } from "vue";
 import {
   useMessage,
   NButton,
@@ -13,14 +13,16 @@ import {
   NSwitch,
   NCheckbox,
   NPopconfirm,
+  type DataTableSortState,
 } from "naive-ui";
-import { api, download, ApiError } from "../api";
+import { api, ApiError } from "../api";
 import { useSession } from "../stores/session";
 import { defaultPolicy, type UserManagement } from "@nodepass/contracts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import TransferView from "./TransferView.vue";
 import UpdatesView from "./UpdatesView.vue";
+import BackupsView from "./BackupsView.vue";
 import IntegrationsView from "./IntegrationsView.vue";
 import TokensView from "./TokensView.vue";
 import PresetsView from "./PresetsView.vue";
@@ -29,12 +31,15 @@ import NInputNumber from "../components/NumberField.vue";
 import NModal from "../components/AccessibleModal.vue";
 import CustomFieldEditor from "../components/CustomFieldEditor.vue";
 import FieldHelp from "../components/FieldHelp.vue";
+import MembersDialog from "../components/MembersDialog.vue";
+import { orderedGroups, sortedAdminRows } from "../admin-table";
 import { profilePermissionGroups } from "../profile-permissions";
 export default defineComponent({
   setup() {
     return { message: useMessage() };
   },
   components: {
+    MembersDialog,
     FieldHelp,
     CustomFieldEditor,
     NButton,
@@ -52,6 +57,7 @@ export default defineComponent({
     PageAccent,
     TransferView,
     UpdatesView,
+    BackupsView,
     IntegrationsView,
     TokensView,
     PresetsView,
@@ -70,11 +76,59 @@ export default defineComponent({
     policy: { ...defaultPolicy },
     accountAccess: { fullGroupAccess: false },
     accountAccessLoaded: false,
-    backupName: "",
     legacyEvents: false,
     permissionGroups: profilePermissionGroups,
+    membersTarget: null as {
+      kind: "groups" | "profiles";
+      id: number;
+      name: string;
+    } | null,
+    loadRevision: 0,
   }),
   computed: {
+    tableSort(): { field: string; direction: "asc" | "desc" } {
+      const fields =
+        this.section === "users"
+          ? [
+              "name",
+              "login",
+              "email",
+              "primaryGroup",
+              "additionalGroups",
+              "isDisabled",
+            ]
+          : this.section === "profiles"
+            ? ["name"]
+            : ["name", "description"];
+      const { sort, direction } = this.$route.query;
+      return typeof sort === "string" &&
+        fields.includes(sort) &&
+        (direction === "asc" || direction === "desc")
+        ? { field: sort, direction }
+        : { field: "name", direction: "asc" };
+    },
+    sortField(): string {
+      return this.tableSort.field;
+    },
+    sortDirection(): "asc" | "desc" {
+      return this.tableSort.direction;
+    },
+    canReadMembers() {
+      const viewer = useSession().viewer;
+      return (
+        !!viewer && (viewer.isAppAdmin || viewer.permissions.mgmUsers === true)
+      );
+    },
+    sortedRows() {
+      return ["users", "groups", "profiles"].includes(this.section)
+        ? sortedAdminRows(
+            this.rows,
+            this.sortField,
+            this.sortDirection,
+            this.$i18n.locale,
+          )
+        : this.rows;
+    },
     accessEpoch() {
       return useSession().accessEpoch;
     },
@@ -149,27 +203,79 @@ export default defineComponent({
       return String(this.$route.params.section);
     },
     columns() {
+      const eventTitles: Record<string, string> = {
+        date: "eventDate",
+        action: "eventAction",
+        userId: "eventActor",
+        target: "eventTarget",
+      };
       const keys =
         this.section === "events"
           ? ["date", "action", "userId", "target"]
           : [
               "name",
               ...(this.section === "users"
-                ? ["login", "email"]
+                ? ["login", "email", "primaryGroup", "additionalGroups"]
                 : this.section === "profiles"
                   ? []
                   : ["description"]),
             ];
       return [
         ...keys.map((k) => ({
-          title: this.$t(
-            ["name", "login"].includes(k)
-              ? k
-              : this.section === "events"
-                ? "events"
-                : "notes",
+          ...this.sortColumn(
+            k,
+            this.$t(
+              [
+                "name",
+                "login",
+                "email",
+                "primaryGroup",
+                "additionalGroups",
+              ].includes(k)
+                ? k
+                : this.section === "events"
+                  ? eventTitles[k]!
+                  : "notes",
+            ),
           ),
-          key: k,
+          ...(k === "primaryGroup"
+            ? { render: (row: any) => row.primaryGroup?.name ?? "—" }
+            : {}),
+          ...(k === "additionalGroups"
+            ? {
+                render: (row: any) =>
+                  row.additionalGroups?.length
+                    ? h(
+                        "div",
+                        { class: "user-table-groups" },
+                        orderedGroups(
+                          row.additionalGroups,
+                          this.$i18n.locale,
+                        ).map((group) =>
+                          h(
+                            NTag,
+                            { size: "small", bordered: false, key: group.id },
+                            { default: () => group.name },
+                          ),
+                        ),
+                      )
+                    : "—",
+              }
+            : {}),
+          ...(this.section === "events" && ["userId", "target"].includes(k)
+            ? {
+                render: (row: any) => {
+                  const value = row[k];
+                  const login =
+                    k === "userId" ? row.userLogin : row.targetUserLogin;
+                  return value == null
+                    ? ""
+                    : login
+                      ? `${value} (${login})`
+                      : String(value);
+                },
+              }
+            : {}),
           ...(this.section === "events" && k === "action"
             ? {
                 render: (row: any) => {
@@ -187,8 +293,7 @@ export default defineComponent({
         ...(this.section === "users"
           ? [
               {
-                title: this.$t("signIn"),
-                key: "isDisabled",
+                ...this.sortColumn("isDisabled", this.$t("signIn")),
                 render: (row: any) =>
                   h(
                     NTag,
@@ -216,6 +321,26 @@ export default defineComponent({
                 key: "actions",
                 render: (row: any) =>
                   h("div", { class: "table-actions" }, [
+                    ...(["groups", "profiles"].includes(this.section) &&
+                    this.canReadMembers
+                      ? [
+                          h(
+                            NButton,
+                            {
+                              size: "small",
+                              quaternary: true,
+                              onClick: () => {
+                                this.membersTarget = {
+                                  kind: this.section as "groups" | "profiles",
+                                  id: row.id,
+                                  name: row.name,
+                                };
+                              },
+                            },
+                            { default: () => this.$t("groupMembers") },
+                          ),
+                        ]
+                      : []),
                     h(
                       NButton,
                       {
@@ -275,6 +400,10 @@ export default defineComponent({
   },
   watch: {
     accessEpoch() {
+      this.loadRevision++;
+      this.membersTarget = null;
+      this.groups = [];
+      this.profiles = [];
       this.form = {};
       this.editingManagement = null;
       this.show = false;
@@ -290,17 +419,92 @@ export default defineComponent({
     section: {
       immediate: true,
       handler() {
+        this.membersTarget = null;
         void this.load();
       },
     },
   },
   beforeUnmount() {
+    this.loadRevision++;
+    this.membersTarget = null;
     this.active = false;
     this.form = {};
     this.show = false;
     this.rows = [];
   },
   methods: {
+    setTableSort(field: string, direction: "asc" | "desc") {
+      void this.$router.replace({
+        query: { ...this.$route.query, sort: field, direction },
+      });
+    },
+    sortColumn(key: string, title: string) {
+      if (!["users", "groups", "profiles"].includes(this.section))
+        return { key, title };
+      const selected = this.sortField === key;
+      const next = selected && this.sortDirection === "asc" ? "desc" : "asc";
+      // NaiveUI exposes the visual sorter but no header-attribute API.
+      const labelHeader = (node: VNode) =>
+        node.el
+          ?.closest("th")
+          ?.setAttribute(
+            "aria-sort",
+            selected
+              ? this.sortDirection === "asc"
+                ? "ascending"
+                : "descending"
+              : "none",
+          );
+      return {
+        key,
+        title: () =>
+          h(
+            "button",
+            {
+              type: "button",
+              class: "table-sort-title",
+              onVnodeMounted: labelHeader,
+              onVnodeUpdated: labelHeader,
+              "aria-label": `${this.$t("sort")}: ${title} · ${this.$t(next === "asc" ? "ascending" : "descending")}`,
+              onClick: (event: MouseEvent) => {
+                event.stopPropagation();
+                this.setTableSort(key, next);
+              },
+            },
+            title,
+          ),
+        sorter: true as const,
+        sortOrder: selected
+          ? this.sortDirection === "asc"
+            ? ("ascend" as const)
+            : ("descend" as const)
+          : (false as const),
+        customNextSortOrder: (order: string | false) =>
+          order === "ascend" ? ("descend" as const) : ("ascend" as const),
+      };
+    },
+    changeTableSort(state: DataTableSortState | DataTableSortState[] | null) {
+      if (!state || Array.isArray(state) || !state.order) return;
+      const fields =
+        this.section === "users"
+          ? [
+              "name",
+              "login",
+              "email",
+              "primaryGroup",
+              "additionalGroups",
+              "isDisabled",
+            ]
+          : this.section === "profiles"
+            ? ["name"]
+            : ["name", "description"];
+      if (fields.includes(String(state.columnKey))) {
+        this.setTableSort(
+          String(state.columnKey),
+          state.order === "descend" ? "desc" : "asc",
+        );
+      }
+    },
     rowEditable(row: any) {
       return (
         this.section !== "users" ||
@@ -338,6 +542,14 @@ export default defineComponent({
       }
     },
     async load() {
+      const revision = ++this.loadRevision;
+      const section = this.section;
+      const accessEpoch = this.accessEpoch;
+      const current = () =>
+        this.active &&
+        revision === this.loadRevision &&
+        section === this.section &&
+        accessEpoch === this.accessEpoch;
       await this.run(async () => {
         if (this.section === "security") {
           this.accountAccessLoaded = false;
@@ -355,18 +567,26 @@ export default defineComponent({
             "presets",
             "updates",
           ].includes(this.section)
-        )
-          this.rows = await api(
-            this.section +
+        ) {
+          const rows = await api(
+            section +
               (this.section === "events" && this.legacyEvents
                 ? "?legacy=true"
                 : ""),
           );
-        if (this.section === "users")
-          [this.groups, this.profiles] = await Promise.all([
+          if (!current()) return;
+          this.rows = rows;
+        }
+        if (section === "users") {
+          const [groups, profiles] = await Promise.all([
             api("groups"),
             api("profiles"),
           ]);
+          if (current()) {
+            this.groups = groups;
+            this.profiles = profiles;
+          }
+        }
       });
     },
     open(row?: any) {
@@ -474,19 +694,6 @@ export default defineComponent({
         );
         this.message.success(this.$t("saved"), { duration: 3000 });
       });
-    },
-    async backup() {
-      if (this.busy) return;
-      await this.run(async () => {
-        this.backupName = (await api("backups", "POST", {})).name;
-        this.message.success(this.$t("saved"), { duration: 3000 });
-      });
-    },
-    async downloadBackup() {
-      if (this.busy) return;
-      await this.run(() =>
-        download(`backups/${this.backupName}`, undefined, "GET"),
-      );
     },
     options(rows: any[]) {
       return rows.map((r) => ({ label: r.name, value: r.id }));
@@ -605,27 +812,36 @@ export default defineComponent({
         >
       </n-form></n-card
     >
-    <n-card v-else-if="section === 'backups'" class="settings-card"
-      ><div class="backup-illustration"><Icon name="shield" :size="48" /></div>
-      <h2>{{ $t("backups") }}</h2>
-      <p class="muted">{{ $t("security") }} · nodePass</p>
-      <n-button type="primary" :loading="busy" @click="backup">{{
-        $t("add")
-      }}</n-button>
-      <div v-if="backupName" style="margin-top: 20px">
-        <n-button :loading="busy" @click="downloadBackup">{{
-          $t("download")
-        }}</n-button>
-      </div></n-card
-    >
-    <n-data-table
+    <BackupsView v-else-if="section === 'backups'" />
+    <div
       v-else
-      :columns="columns"
-      :data="rows"
-      :scroll-x="section === 'users' ? 700 : undefined"
-      :loading="busy"
-      :bordered="false"
-      :row-key="(row: any) => row.id"
+      :class="{ 'activity-table-scroll': section === 'events' }"
+      :tabindex="section === 'events' ? 0 : undefined"
+      :role="section === 'events' ? 'region' : undefined"
+      :aria-label="section === 'events' ? $t('events') : undefined"
+    >
+      <n-data-table
+        :columns="columns"
+        :data="sortedRows"
+        :remote="['users', 'groups', 'profiles'].includes(section)"
+        :scroll-x="
+          section === 'users'
+            ? 1100
+            : ['groups', 'profiles'].includes(section)
+              ? 650
+              : undefined
+        "
+        :single-line="false"
+        :loading="busy"
+        :bordered="false"
+        :row-key="(row: any) => row.id"
+        @update:sorter="changeTableSort"
+      />
+    </div>
+    <MembersDialog
+      v-if="membersTarget && canReadMembers && section === membersTarget.kind"
+      :target="membersTarget"
+      @close="membersTarget = null"
     />
     <n-modal
       v-model:show="show"
@@ -818,6 +1034,32 @@ export default defineComponent({
   </section>
 </template>
 <style scoped>
+:deep(.user-table-groups) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+:deep(.user-table-groups .n-tag) {
+  max-width: 100%;
+  height: auto;
+  min-height: 22px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:deep(.user-table-groups .n-tag__content) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.activity-table-scroll {
+  overflow-x: auto;
+}
+.activity-table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.activity-table-scroll > .n-data-table {
+  min-width: 700px;
+}
 :global(.account-modal.profile-modal) {
   width: min(780px, calc(100vw - 28px));
 }

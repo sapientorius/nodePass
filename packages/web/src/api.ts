@@ -69,6 +69,8 @@ async function request(
     } catch {
       /* Do not expose server error bodies. */
     }
+    if (response.status === 503 && failure.code === "MAINTENANCE")
+      window.dispatchEvent(new Event("nodepass-maintenance"));
     if (
       response.status === 403 &&
       failure.code !== "REAUTHENTICATION_REQUIRED" &&

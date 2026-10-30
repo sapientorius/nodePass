@@ -2,6 +2,7 @@ import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { version } from "@nodepass/contracts";
 import { existsSync } from "node:fs";
 import { once } from "node:events";
+import type { Context } from "koa";
 import { loadConfig } from "../packages/server/src/config.js";
 import { createApp } from "../packages/server/src/app.js";
 import { offlineUpdates } from "./offline-updates.js";
@@ -479,6 +480,165 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
         .toString(),
     ).toBe("NPB1");
     expect((await request("/api/v1/backups/unsafe")).response.status).toBe(400);
+  });
+  it("resolves activity user logins without confusing other IDs or exposing user records", async () => {
+    const profile = (
+      await request("/api/v1/profiles", "POST", {
+        name: "Activity reader",
+        profile: { evl: true },
+      })
+    ).value;
+    const user = (
+      await request("/api/v1/users", "POST", {
+        name: "Activity display name",
+        login: "activity.reader",
+        password,
+        userGroupId: 1,
+        userProfileId: profile.id,
+      })
+    ).value;
+    expect(user.id).toBeGreaterThan(1);
+    const fixtures = [
+      ["users.edit", String(user.id)],
+      ["users.role.app.0_to_1", String(user.id)],
+      ["token.create", String(user.id)],
+      ["auth.emergency.recovery", String(user.id)],
+      ["account.edit", String(user.id)],
+      ["accounts.export", String(user.id)],
+      ["token.revoke", String(user.id)],
+      ["users.edit", "99998"],
+      ["users.edit", `${user.id}suffix`],
+      ["users.edit", "9007199254740993"],
+      ["auth.login", null],
+    ].map(([action, target], index) => ({
+      id: 50000 + index,
+      date: new Date(),
+      action,
+      target,
+      userId: index === 7 ? 99999 : index === 10 ? null : 1,
+    }));
+    await runtime.db("nodepass_audit").insert(fixtures);
+    const response = await request("/api/v1/events");
+    expect(response.response.status).toBe(200);
+    const rows = response.value.filter((row: any) => row.id >= 50000);
+    expect(rows.map((row: any) => row.id)).toEqual(
+      fixtures.map((row) => row.id).reverse(),
+    );
+    for (const fixture of fixtures) {
+      const row = rows.find((row: any) => row.id === fixture.id);
+      expect(row).toMatchObject({
+        action: fixture.action,
+        userId: fixture.userId,
+        target: fixture.target,
+        userLogin: fixture.userId === 1 ? "admin" : null,
+        targetUserLogin: fixture.id < 50004 ? "activity.reader" : null,
+      });
+      expect(Object.keys(row).sort()).toEqual(
+        [
+          "id",
+          "date",
+          "action",
+          "userId",
+          "target",
+          "userLogin",
+          "targetUserLogin",
+        ].sort(),
+      );
+    }
+    await runtime
+      .db("User")
+      .where({ id: user.id })
+      .update({ login: "renamed.reader" });
+    expect(
+      (await request("/api/v1/events")).value.find(
+        (row: any) => row.id === 50000,
+      ),
+    ).toMatchObject({
+      target: String(user.id),
+      targetUserLogin: "renamed.reader",
+    });
+    await runtime.db("EventLog").insert([
+      {
+        date: 1,
+        login: "historical.reader",
+        userId: 65000,
+        ipAddress: "127.0.0.1",
+        action: "legacy.event",
+        description: String(user.id),
+        level: "INFO",
+      },
+      {
+        date: 2,
+        login: null,
+        userId: 1,
+        ipAddress: "127.0.0.1",
+        action: "legacy.event",
+        description: "Synthetic legacy details",
+        level: "INFO",
+      },
+    ]);
+    const legacy = (await request("/api/v1/events?legacy=true")).value;
+    expect(legacy[0]).toMatchObject({
+      userId: 1,
+      userLogin: "admin",
+      targetUserLogin: null,
+    });
+    expect(legacy[1]).toMatchObject({
+      userId: 65000,
+      userLogin: "historical.reader",
+      target: String(user.id),
+      targetUserLogin: null,
+    });
+    let raw = "";
+    const issueReader = async () =>
+      runtime.auth.issue(
+        {
+          cookies: {
+            get: () => undefined,
+            set: (_key: string, value: string) => {
+              raw = value;
+            },
+          },
+        } as unknown as Context,
+        // Resolve the current profile afresh after a permission change.
+        await runtime.auth.user(user.id),
+        true,
+      );
+    const reader = await issueReader();
+    for (const path of ["/api/v1/events", "/api/v1/events?legacy=true"])
+      expect(
+        (await request(path, "GET", undefined, { cookie: `nodepass=${raw}` }))
+          .response.status,
+      ).toBe(200);
+    const denied = await request(
+      "/api/v1/users",
+      "POST",
+      {},
+      {
+        cookie: `nodepass=${raw}`,
+        "x-csrf-token": reader.session.csrf,
+      },
+    );
+    expect(denied.response.status).toBe(403);
+    expect(denied.value.message).toBe("Management permission required");
+    expect(
+      (await request("/api/v1/events", "GET", undefined, { cookie: "" }))
+        .response.status,
+    ).toBe(401);
+    expect(
+      (
+        await request(`/api/v1/profiles/${profile.id}`, "PATCH", {
+          name: "Activity reader",
+          profile: {},
+        })
+      ).response.status,
+    ).toBe(200);
+    await issueReader();
+    for (const path of ["/api/v1/events", "/api/v1/events?legacy=true"])
+      expect(
+        (await request(path, "GET", undefined, { cookie: `nodepass=${raw}` }))
+          .response.status,
+      ).toBe(403);
   });
   it("supports actual 3.2.11 custom-field modules, historical IDs and independent secret permissions", async () => {
     const issued = await request("/api/v1/tokens", "POST", {

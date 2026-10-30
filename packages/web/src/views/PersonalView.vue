@@ -11,7 +11,6 @@ import {
   NListItem,
   NThing,
   NPopconfirm,
-  NTag,
 } from "naive-ui";
 import { startRegistration } from "@simplewebauthn/browser";
 import { api } from "../api";
@@ -20,7 +19,6 @@ import { useAccounts } from "../stores/accounts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import PasswordStrength from "../components/PasswordStrength.vue";
-import ConfirmationForm from "../components/ConfirmationForm.vue";
 import NCard from "../components/PanelCard.vue";
 export default defineComponent({
   setup() {
@@ -36,11 +34,9 @@ export default defineComponent({
     NListItem,
     NThing,
     NPopconfirm,
-    NTag,
     Icon,
     PageAccent,
     PasswordStrength,
-    ConfirmationForm,
   },
   data: () => ({
     busy: false,
@@ -50,7 +46,6 @@ export default defineComponent({
     current: "",
     next: "",
     codes: [] as string[],
-    confirmed: false,
   }),
   computed: { ...mapStores(useSession) },
   mounted() {
@@ -91,7 +86,6 @@ export default defineComponent({
             response,
           }),
         );
-        this.confirmed = true;
         this.message.success(this.$t("saved"), { duration: 3000 });
         this.factors = await api("auth/factors");
       });
@@ -119,7 +113,6 @@ export default defineComponent({
         if (this.enrollment)
           this.message.success(this.$t("saved"), { duration: 3000 });
         this.enrollment = null;
-        this.confirmed = true;
         this.factors = await api("auth/factors");
       });
     },
@@ -160,19 +153,9 @@ export default defineComponent({
       <div>
         <PageAccent />
         <h1>{{ $t("personal") }}</h1>
-        <p class="muted">{{ $t("confirmHelp") }}</p>
       </div>
-      <n-tag v-if="confirmed" type="success" :bordered="false">{{
-        $t("confirm")
-      }}</n-tag>
     </div>
     <div class="settings-grid">
-      <n-card :title="$t('confirm')">
-        <ConfirmationForm
-          :key="factors.map((factor) => factor.id).join(',')"
-          @confirmed="confirmed = true"
-        />
-      </n-card>
       <n-card :title="$t('mfa')"
         ><n-list
           ><n-list-item v-for="factor in factors" :key="factor.id"
@@ -258,3 +241,8 @@ export default defineComponent({
     </div>
   </section>
 </template>
+<style scoped>
+.detail-actions {
+  flex-wrap: wrap;
+}
+</style>

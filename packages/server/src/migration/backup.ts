@@ -26,7 +26,7 @@ export interface BackupRecord {
 }
 const expandedLimit = 4 * 1024 ** 3,
   recordLimit = 64 * 1024 ** 2;
-function encode(row: Row): Row {
+export function encodeBackupRow(row: Row): Row {
   return Object.fromEntries(
     Object.entries(row).map(([k, v]) => [
       k,
@@ -55,9 +55,17 @@ export async function backup(
   directory: string,
   key: Buffer,
   configuration: unknown,
+  requestedName?: string,
+  verifySnapshot?: (snapshot: Database) => Promise<void>,
 ): Promise<string> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const name = `nodepass-${Date.now()}-${token().slice(0, 8)}.npb`,
+  if (
+    requestedName &&
+    !/^nodepass-\d+-[A-Za-z0-9_-]{8}\.npb$/.test(requestedName)
+  )
+    throw new Error("Invalid backup name");
+  const name =
+      requestedName ?? `nodepass-${Date.now()}-${token().slice(0, 8)}.npb`,
     partial = resolve(directory, `${name}.partial`),
     final = resolve(directory, name);
   const nonce = randomBytes(12),
@@ -119,7 +127,7 @@ export async function backup(
             .offset(offset);
           if (!rows.length) break;
           for (const row of rows) {
-            const line = record({ table, row: encode(row) });
+            const line = record({ table, row: encodeBackupRow(row) });
             hash.update(line);
             yield line;
           }
@@ -137,12 +145,20 @@ export async function backup(
         cipher,
         createWriteStream(partial, { flags: "a", mode: 0o600 }),
       );
+      // Verify managed native backups against the same MVCC snapshot before publication/pruning.
+      if (verifySnapshot) await verifySnapshot(snapshot);
       await snapshot.commit();
     } catch (error) {
       await snapshot.rollback();
       throw error;
     }
     await appendFile(partial, cipher.getAuthTag());
+    const completed = await openFile(partial, "r+");
+    try {
+      await completed.sync();
+    } finally {
+      await completed.close();
+    }
     await rename(partial, final);
     return name;
   } catch (error) {
@@ -155,7 +171,12 @@ export async function readBackup(
   key: Buffer,
   directory: string,
   visit?: (record: BackupRecord) => Promise<void> | void,
-): Promise<{ configuration: unknown; records: BackupRecord[] }> {
+): Promise<{
+  configuration: unknown;
+  records: BackupRecord[];
+  createdAt: number | null;
+  counts: Record<string, number>;
+}> {
   const size = (await stat(path)).size;
   if (size < 32 || size > 4 * 1024 ** 3) throw new Error("Invalid backup size");
   const fd = await openFile(path, "r");
@@ -216,6 +237,8 @@ export async function readBackup(
     });
     const records: BackupRecord[] = [];
     let configuration: unknown,
+      createdAt: number | null = null,
+      manifestCounts: Record<string, number> = {},
       complete = false,
       header = false;
     const counts = new Map<string, number>(),
@@ -228,6 +251,8 @@ export async function readBackup(
           if (header) throw new Error("Duplicate backup header");
           header = true;
           configuration = data.configuration;
+          const timestamp = Date.parse(data.createdAt);
+          createdAt = Number.isFinite(timestamp) ? timestamp : null;
         } else if (data.complete === true) {
           if (!data.manifest || typeof data.manifest !== "object")
             throw new Error("Missing backup manifest");
@@ -235,6 +260,14 @@ export async function readBackup(
             string,
             { count: number; sha256: string },
           ][]) {
+            if (
+              !entry ||
+              !Number.isSafeInteger(entry.count) ||
+              entry.count < 0 ||
+              typeof entry.sha256 !== "string" ||
+              !/^[a-f0-9]{64}$/.test(entry.sha256)
+            )
+              throw new Error("Invalid backup manifest");
             const hash = hashes.get(table) ?? createHash("sha256");
             if (
               entry.count !== (counts.get(table) ?? 0) ||
@@ -242,6 +275,7 @@ export async function readBackup(
             )
               throw new Error("Backup manifest mismatch");
             hashes.delete(table);
+            manifestCounts = { ...manifestCounts, [table]: entry.count };
           }
           if (hashes.size) throw new Error("Incomplete backup manifest");
           complete = true;
@@ -260,7 +294,7 @@ export async function readBackup(
       await unpack;
       if (!complete || configuration === undefined)
         throw new Error("Incomplete backup");
-      return { configuration, records };
+      return { configuration, records, createdAt, counts: manifestCounts };
     } finally {
       lines.close();
       limit.destroy();

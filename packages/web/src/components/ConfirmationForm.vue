@@ -6,6 +6,8 @@ import {
   NForm,
   NFormItem,
   NInput,
+  NRadio,
+  NRadioGroup,
   NSpin,
   type InputInst,
 } from "naive-ui";
@@ -21,8 +23,20 @@ import { api, ApiError } from "../api";
 import { ActionCancelled } from "../confirmation";
 
 export default defineComponent({
-  components: { NAlert, NButton, NForm, NFormItem, NInput, NSpin },
-  props: { cancellable: Boolean },
+  components: {
+    NAlert,
+    NButton,
+    NForm,
+    NFormItem,
+    NInput,
+    NRadio,
+    NRadioGroup,
+    NSpin,
+  },
+  props: {
+    cancellable: Boolean,
+    endpoint: { type: String, default: "auth/confirm" },
+  },
   emits: ["confirmed", "cancel"],
   data: () => ({
     methods: [] as ConfirmationMethod[],
@@ -60,7 +74,7 @@ export default defineComponent({
           password: "password",
           totp: "totp",
           recovery: "recoveryCodes",
-          passkey: "confirmPasskey",
+          passkey: "confirmPasskeyMethod",
         }[method],
       );
     },
@@ -76,7 +90,6 @@ export default defineComponent({
       this.method = method;
       this.value = "";
       this.error = "";
-      void this.focusInput();
     },
     async load() {
       const revision = ++this.revision;
@@ -113,6 +126,8 @@ export default defineComponent({
       this.busy = true;
       this.error = "";
       try {
+        let result: { authorization?: string };
+        const endpoint = this.endpoint;
         if (this.method === "passkey") {
           const data = await api("auth/confirm/passkey-options", "POST", {});
           if (revision !== this.revision) return;
@@ -122,13 +137,13 @@ export default defineComponent({
           });
           this.passkeyActive = false;
           if (revision !== this.revision) return;
-          await api("auth/confirm", "POST", {
+          result = await api(endpoint, "POST", {
             challenge: data.challenge,
             response,
           });
         } else {
-          await api(
-            "auth/confirm",
+          result = await api(
+            endpoint,
             "POST",
             this.method === "password"
               ? { password: this.value }
@@ -137,7 +152,7 @@ export default defineComponent({
         }
         if (revision !== this.revision) return;
         this.value = "";
-        this.$emit("confirmed");
+        this.$emit("confirmed", result.authorization);
       } catch (error) {
         if (revision !== this.revision || error instanceof ActionCancelled)
           return;
@@ -168,22 +183,25 @@ export default defineComponent({
   >
     <p class="muted">{{ $t("confirmActionHelp") }}</p>
     <n-spin v-if="loading" size="small" :aria-label="$t('loading')" />
-    <div
+    <n-form-item
       v-if="methods.length > 1"
-      class="confirmation-methods"
-      role="group"
-      :aria-label="$t('confirmMethod')"
+      :label="$t('confirmMethod')"
+      :show-feedback="false"
     >
-      <n-button
-        v-for="item in methods"
-        :key="item"
-        :type="method === item ? 'primary' : 'default'"
-        :aria-pressed="method === item"
+      <n-radio-group
+        class="confirmation-methods"
+        name="confirmation-method"
+        role="radiogroup"
+        :value="method"
+        :aria-label="$t('confirmMethod')"
         :disabled="busy"
-        @click="select(item)"
-        >{{ label(item) }}</n-button
+        @update:value="select"
       >
-    </div>
+        <n-radio v-for="item in methods" :key="item" :value="item">{{
+          label(item)
+        }}</n-radio>
+      </n-radio-group>
+    </n-form-item>
     <n-form-item
       v-if="!loading && methods.length && method !== 'passkey'"
       :label="fieldLabel"
@@ -235,15 +253,13 @@ export default defineComponent({
 .confirmation-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 16px;
 }
-.confirmation-methods {
-  margin-bottom: 20px;
-}
-.confirmation-methods :deep(.n-button__content) {
+.confirmation-methods :deep(.n-radio__label),
+.confirmation-actions :deep(.n-button__content) {
   white-space: normal;
 }
-.confirmation-methods :deep(.n-button) {
+.confirmation-actions :deep(.n-button) {
   height: auto;
   min-height: 36px;
   padding: 8px 12px;

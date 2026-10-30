@@ -23,6 +23,7 @@ import Icon from "./components/Icon.vue";
 import LoginView from "./views/LoginView.vue";
 import UpdateNotice from "./components/UpdateNotice.vue";
 import ConfirmationModal from "./components/ConfirmationModal.vue";
+import BackupProgress from "./components/BackupProgress.vue";
 import { cancelConfirmation } from "./confirmation";
 import { uiLocales, dateLocales } from "./ui-locale";
 import type { Language, UpdateStatus } from "@nodepass/contracts";
@@ -46,6 +47,7 @@ export default defineComponent({
     LoginView,
     UpdateNotice,
     ConfirmationModal,
+    BackupProgress,
   },
   data: () => ({
     languageOptions,
@@ -169,6 +171,7 @@ export default defineComponent({
   async mounted() {
     window.addEventListener("nodepass-expired", this.expired);
     window.addEventListener("nodepass-refresh", this.refreshSession);
+    window.addEventListener("nodepass-maintenance", this.enterMaintenance);
     window.addEventListener("focus", this.activated);
     document.addEventListener("visibilitychange", this.activated);
     await this.sessionStore.load();
@@ -183,10 +186,15 @@ export default defineComponent({
     clearInterval(this.poller);
     window.removeEventListener("nodepass-expired", this.expired);
     window.removeEventListener("nodepass-refresh", this.refreshSession);
+    window.removeEventListener("nodepass-maintenance", this.enterMaintenance);
     window.removeEventListener("focus", this.activated);
     document.removeEventListener("visibilitychange", this.activated);
   },
   methods: {
+    enterMaintenance() {
+      this.sessionStore.maintenance = true;
+      cancelConfirmation();
+    },
     expired() {
       this.sessionStore.clear();
       this.notifications = [];
@@ -283,8 +291,13 @@ export default defineComponent({
           class="app-root"
           :class="{ 'is-dark': sessionStore.theme === 'dark' }"
         >
+          <BackupProgress />
           <ConfirmationModal
-            v-if="sessionStore.viewer?.phase === 'ready' && !publicRoute"
+            v-if="
+              sessionStore.viewer?.phase === 'ready' &&
+              !publicRoute &&
+              !sessionStore.maintenance
+            "
           />
           <div v-if="sessionStore.booting" class="boot">
             <img src="/logo.svg" alt="nodePass" width="64" height="64" /><n-spin
@@ -297,7 +310,8 @@ export default defineComponent({
                 sessionStore.error
               }}</n-alert>
             </div>
-            <template v-if="publicRoute"><router-view /></template>
+            <template v-if="sessionStore.maintenance"></template>
+            <template v-else-if="publicRoute"><router-view /></template>
             <template
               v-else-if="
                 !sessionStore.viewer || sessionStore.viewer.phase !== 'ready'

@@ -2,6 +2,30 @@
 
 Versions before 1.0 may include breaking changes in minor releases. Patch releases contain compatible fixes. Release candidates are intended for evaluation with synthetic data or a separate representative copy.
 
+## [0.1.5]
+
+### Added
+
+- A dedicated Backups page lists, creates, downloads and deletes backup files, with background progress and persistent status. Application administrators can configure automatic backups with timezone-aware scheduling, bounded retries and retention of verified automatic versions.
+- Application administrators can restore a listed or uploaded nodePass backup after full validation, explicit database confirmation and renewed identity confirmation. Restore creates a verified safety backup, enters maintenance, revokes sessions and recovers interrupted replacements on startup.
+- Group and permission-profile member dialogs provide paginated user lists. Group membership can be filtered by primary or additional membership, and administration tables support sorting.
+
+### Changed
+
+- Identity confirmation offers clearer passkey, authenticator and recovery-code choices while preserving pending actions.
+- Event logs resolve user login names and show translated event descriptions. Backup, restore, membership and confirmation workflows have expanded browser and database regression coverage.
+
+### Fixed
+
+- Page headings wrap their actions on narrow screens so longer translated administration titles do not overflow the viewport.
+
+### Compatibility and upgrade notes
+
+- No database schema change is introduced. Preserve existing secrets, persistent volumes and historical backup keys, and update using the release's verified image digest.
+- Automatic backups remain disabled until explicitly configured. Retention applies only to verified automatic backups; manual, safety and unclassified backups are preserved.
+- Web restore requires the backup's original deployment key, sufficient protected working space and exclusive database access through one application process. Restored users, credentials, permissions and factors replace the current ones; automatic backups must be reviewed and re-enabled afterward. See [backup and restore operation](docs/OPERATIONS.md#backups-and-restore).
+- The cumulative security catalogue retains NP-2026-001 and NP-2026-002 from version 0.1.3; this release adds no new advisory identifiers.
+
 ## [0.1.4]
 
 ### Added

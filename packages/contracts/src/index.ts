@@ -1,6 +1,7 @@
 import { Type, type Static } from "@feathersjs/typebox";
 export { version } from "./version.js";
 export * from "./updates.js";
+export * from "./backups.js";
 
 export const languages = [
   "de_DE",
@@ -59,6 +60,17 @@ export interface UserManagement {
   canResetPassword: boolean;
   reason?: "permission" | "self" | "administrator" | "groups" | "profile";
 }
+export interface GroupReference {
+  id: number;
+  name: string;
+}
+export interface MemberSummary {
+  id: number;
+  name: string;
+  login: string;
+}
+export type GroupMember = MemberSummary;
+export type GroupMembership = "primary" | "additional";
 export interface Account {
   id: number;
   name: string;

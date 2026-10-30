@@ -8,6 +8,7 @@ import { Migration } from "./migration/service.js";
 import { backup } from "./migration/backup.js";
 import { restore } from "./migration/restore.js";
 import { emergencyRecovery } from "./security/recovery.js";
+import { BackupFiles } from "./services/backup-files.js";
 const [command, ...args] = process.argv.slice(2);
 const option = (name: string): string => {
   const index = args.indexOf(name);
@@ -64,12 +65,17 @@ async function main(): Promise<void> {
       await migration.importDump(await readFile(option("--file"), "utf8"));
       console.log("Dump imported. Run preflight and migrate to activate it.");
     } else if (command === "backup") {
+      const files = new BackupFiles(config.dataDir);
+      await files.initialize();
+      const name = files.name();
+      await files.metadata(name, { origin: "manual" });
       console.log(
         await backup(
           db,
           resolve(config.dataDir, "backups"),
           config.deploymentKey,
           { legacy: config.legacy, publicUrl: config.publicUrl },
+          name,
         ),
       );
     } else if (command === "restore") {
