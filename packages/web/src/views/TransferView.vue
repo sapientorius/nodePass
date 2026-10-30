@@ -42,6 +42,7 @@ export default defineComponent({
     format: "syspass",
     source: "",
     password: "",
+    masterPassword: "",
     cleartext: false,
     preview: null as any,
     categories: [] as any[],
@@ -67,7 +68,17 @@ export default defineComponent({
   beforeUnmount() {
     this.source = "";
     this.password = "";
+    this.masterPassword = "";
     this.preview = null;
+  },
+  watch: {
+    format() {
+      this.preview = null;
+      this.result = null;
+      this.source = "";
+      this.password = "";
+      this.masterPassword = "";
+    },
   },
   methods: {
     tabProps,
@@ -76,6 +87,7 @@ export default defineComponent({
     },
     async run(job: () => Promise<void>) {
       this.busy = true;
+      useSession().error = "";
       try {
         await job();
       } catch (error) {
@@ -98,14 +110,17 @@ export default defineComponent({
     async inspect() {
       if (this.busy) return;
       this.result = null;
+      this.preview = null;
       await this.run(async () => {
         this.preview = await api("import/preview", "POST", {
           format: this.format,
           source: this.source,
           password: this.password,
+          masterPassword: this.masterPassword,
         });
         this.source = "";
         this.password = "";
+        this.masterPassword = "";
       });
     },
     async commit() {
@@ -147,6 +162,7 @@ export default defineComponent({
       @update:value="
         preview = null;
         password = '';
+        masterPassword = '';
         source = '';
         result = null;
       "
@@ -159,6 +175,7 @@ export default defineComponent({
           ><n-form-item :label="$t('format')"
             ><n-select
               filterable
+              :disabled="busy"
               :input-props="{ 'aria-label': $t('format') }"
               v-model:value="format"
               :options="[
@@ -168,15 +185,32 @@ export default defineComponent({
               ]" /></n-form-item
           ><label class="file-label"
             >{{ $t("upload")
-            }}<input type="file" accept=".csv,.xml" @change="read" /></label
+            }}<input
+              type="file"
+              accept=".csv,.xml"
+              :disabled="busy"
+              @change="read" /></label
           ><n-form-item
             v-if="format === 'syspass' && !preview"
-            :label="$t('password')"
+            :label="$t('importExportPassword')"
             ><n-input
-              :input-props="{ 'aria-label': $t('password') }"
+              :input-props="{ 'aria-label': $t('importExportPassword') }"
               v-model:value="password"
+              :disabled="busy"
               type="password"
               autocomplete="off" /></n-form-item
+          ><n-form-item
+            v-if="format === 'syspass' && !preview"
+            :label="$t('importMasterPassword')"
+            ><n-input
+              :input-props="{ 'aria-label': $t('importMasterPassword') }"
+              v-model:value="masterPassword"
+              :disabled="busy"
+              type="password"
+              autocomplete="off" /></n-form-item
+          ><n-alert v-if="format === 'syspass' && !preview" type="info">{{
+            $t("importPasswordHelp")
+          }}</n-alert
           ><template v-if="preview"
             ><n-alert type="info" :title="$t('preview')"
               >{{ preview.count }} · {{ $t("accounts") }}</n-alert

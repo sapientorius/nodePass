@@ -6,7 +6,11 @@ import bcrypt from "bcryptjs";
 import { BadRequest, Forbidden } from "@feathersjs/errors";
 import { decryptDefuse, encryptDefuse } from "../compat/defuse.js";
 import { equal } from "../security/crypto.js";
-import { checkStrength } from "../security/password.js";
+import {
+  bounded,
+  checkStrength,
+  verifyPassword,
+} from "../security/password.js";
 import { audit, type Database, type Row } from "../db.js";
 import { Accounts, integer, identity, type ServiceParams } from "./accounts.js";
 import type { Auth } from "../security/auth.js";
@@ -39,11 +43,51 @@ function xml(source: string): Row {
     processEntities: true,
   }).parse(source) as Row;
 }
+async function decryptImport(
+  ciphertext: string,
+  key: string,
+  password: string,
+  message: string,
+): Promise<string> {
+  try {
+    const clear = await decryptDefuse(ciphertext, key, password);
+    try {
+      return clear.toString();
+    } finally {
+      clear.fill(0);
+    }
+  } catch {
+    throw new BadRequest(message);
+  }
+}
+async function verifyExportPassword(
+  password: string,
+  hash: string,
+): Promise<boolean> {
+  if (await verifyPassword(password, hash)) return true;
+  // Early nodePass exports used raw bcrypt even above sysPass's 72-character limit.
+  if (
+    Array.from(password).length > 72 &&
+    /^\$2[aby]\$(0[4-9]|1[0-4])\$[./A-Za-z0-9]{53}$/.test(hash)
+  )
+    return bounded(() =>
+      bcrypt.compare(password, hash.replace(/^\$2y\$/, "$2b$")),
+    );
+  return false;
+}
 export async function parseImport(
   format: string,
   source: string,
   password = "",
+  masterPassword = "",
 ): Promise<ImportEntry[]> {
+  if (
+    typeof password !== "string" ||
+    typeof masterPassword !== "string" ||
+    Buffer.byteLength(password) > 4096 ||
+    Buffer.byteLength(masterPassword) > 4096
+  )
+    throw new BadRequest("Invalid import password");
   if (Buffer.byteLength(source) > 10 * 1024 ** 2)
     throw new BadRequest("Import exceeds 10 MiB");
   let result: ImportEntry[] = [];
@@ -114,25 +158,41 @@ export async function parseImport(
       root = document.Root;
     if (!root?.Meta || !/^3/.test(value(root.Meta.Version)))
       throw new BadRequest("Expected sysPass 3 XML");
-    if (root.Encrypted) {
+    if (root.Encrypted !== undefined) {
+      if (
+        ["Accounts", "Categories", "Clients", "Tags"].some(
+          (key) => root[key] !== undefined,
+        )
+      )
+        throw new BadRequest("Unexpected unencrypted XML section");
       if (!password) throw new BadRequest("Export password required");
       if (
         root.Encrypted["@_hash"] &&
-        !(await bcrypt.compare(
+        !(await verifyExportPassword(
           password,
-          String(root.Encrypted["@_hash"]).replace("$2y$", "$2b$"),
+          String(root.Encrypted["@_hash"]),
         ))
       )
         throw new BadRequest("Wrong export password");
+      const chunks = array(root.Encrypted.Data);
+      if (!chunks.length || chunks.length > 4)
+        throw new BadRequest("Expected 1 to 4 encrypted XML sections");
+      // sysPass signs the encrypted node before pretty-printing the document.
+      // Early nodePass exports instead hashed the concatenated clear sections.
+      const encryptedXml = new XMLBuilder({
+        ignoreAttributes: false,
+        format: false,
+      }).build({ Encrypted: root.Encrypted });
       const sections: string[] = [];
-      for (const chunk of array(root.Encrypted.Data)) {
-        const clear = await decryptDefuse(
+      for (const chunk of chunks) {
+        const clear = await decryptImport(
             Buffer.from(value(chunk), "base64").toString(),
-            String(chunk["@_key"]),
+            value(chunk?.["@_key"]),
             password,
+            "Unable to decrypt XML. Check the export password and the XML file.",
           ),
-          section = xml(clear.toString());
-        sections.push(clear.toString());
+          section = xml(clear);
+        sections.push(clear);
         for (const [key, item] of Object.entries(section)) {
           if (
             !["Accounts", "Categories", "Clients", "Tags"].includes(key) ||
@@ -143,9 +203,13 @@ export async function parseImport(
         }
       }
       if (root.Meta.Hash) {
-        const hash = createHash("sha1").update(sections.join("")).digest("hex");
+        const hash = value(root.Meta.Hash),
+          encryptedHash = createHash("sha1").update(encryptedXml).digest("hex"),
+          legacyHash = createHash("sha1")
+            .update(sections.join(""))
+            .digest("hex");
         if (
-          !equal(value(root.Meta.Hash), hash) ||
+          (!equal(hash, encryptedHash) && !equal(hash, legacyHash)) ||
           !equal(
             String(root.Meta.Hash["@_sign"]),
             createHmac("sha256", password).update(hash).digest("hex"),
@@ -172,8 +236,15 @@ export async function parseImport(
     for (const row of array(root.Accounts?.Account)) {
       const encoded = value(row.pass),
         key = value(row.key);
+      if (key && !(masterPassword || password))
+        throw new BadRequest("Original sysPass master password required");
       const clear = key
-        ? (await decryptDefuse(encoded, key, password)).toString()
+        ? await decryptImport(
+            encoded,
+            key,
+            masterPassword || password,
+            "Unable to decrypt account passwords. Check the original sysPass master password and the XML file.",
+          )
         : encoded;
       result.push({
         name: value(row.name),
@@ -376,7 +447,18 @@ export class Transfer {
           "#text": Buffer.from(encrypted.pass).toString("base64"),
         });
       }
-      const hash = createHash("sha1").update(sections.join("")).digest("hex");
+      const encrypted = {
+          "@_hash": await bcrypt.hash(
+            Array.from(password).length > 72
+              ? createHash("sha256").update(password).digest("hex")
+              : password,
+            12,
+          ),
+          Data: chunks,
+        },
+        hash = createHash("sha1")
+          .update(builder.build({ Encrypted: encrypted }))
+          .digest("hex");
       content = builder.build({
         Root: {
           Meta: {
@@ -389,10 +471,7 @@ export class Transfer {
               "#text": hash,
             },
           },
-          Encrypted: {
-            "@_hash": await bcrypt.hash(password, 12),
-            Data: chunks,
-          },
+          Encrypted: encrypted,
         },
       });
       type = "application/xml";

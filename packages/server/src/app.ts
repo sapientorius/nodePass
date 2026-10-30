@@ -1249,11 +1249,12 @@ export async function createApp(
   router.post("/api/v1/import/preview", async (ctx) => {
     const id = await permission(ctx, "configImport", true),
       data = body(ctx);
-    exact(data, ["format", "source", "password"]);
+    exact(data, ["format", "source", "password", "masterPassword"]);
     const entries = await parseImport(
       text(data, "format", 20),
       text(data, "source", 10 * 1024 ** 2),
       data.password ?? "",
+      data.masterPassword ?? "",
     );
     ctx.body = {
       count: entries.length,
