@@ -10,7 +10,7 @@ import {
   readdir,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   BackupFiles,
   atomicJson,
@@ -115,6 +115,24 @@ describe("managed backup files", () => {
     await expect(files.stream(names[0]!)).rejects.toThrow("Unsafe");
     await expect(files.remove(names[0]!)).rejects.toThrow("Unsafe");
   });
+  it.each([
+    "../nodepass-1700000000000-abcdefgh.npb",
+    "..\\nodepass-1700000000000-abcdefgh.npb",
+    "/nodepass-1700000000000-abcdefgh.npb",
+    "C:\\nodepass-1700000000000-abcdefgh.npb",
+    "../backups-other/nodepass-1700000000000-abcdefgh.npb",
+    "nodepass-1700000000000-abcdefgh.npb/../outside",
+  ])(
+    "rejects an external backup filename before read or deletion: %s",
+    async (name) => {
+      const outside = join(directory, "nodepass-1700000000000-abcdefgh.npb");
+      await writeFile(outside, "private", { flag: "wx", mode: 0o600 });
+      await expect(files.summary(name)).rejects.toThrow("Invalid backup name");
+      await expect(files.lease(name)).rejects.toThrow("Invalid backup name");
+      await expect(files.remove(name)).rejects.toThrow("Invalid backup name");
+      expect(await readdir(directory)).toContain(basename(outside));
+    },
+  );
   it("rejects redirected managed directories", async () => {
     await mkdir(join(directory, "other"));
     await rmdir(files.directory);

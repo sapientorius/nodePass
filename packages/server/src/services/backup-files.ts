@@ -9,7 +9,7 @@ import {
   unlink,
   type FileHandle,
 } from "node:fs/promises";
-import { resolve, dirname, basename } from "node:path";
+import { resolve, dirname, basename, sep } from "node:path";
 import { Conflict, BadRequest, NotFound } from "@feathersjs/errors";
 import type { BackupOrigin, BackupSummary, Page } from "@nodepass/contracts";
 import { token } from "../security/crypto.js";
@@ -161,7 +161,10 @@ export class BackupFiles {
   }
   path(name: string): string {
     if (!backupPattern.test(name)) throw new BadRequest("Invalid backup name");
-    return resolve(this.directory, name);
+    const path = resolve(this.directory, name);
+    if (!path.startsWith(this.directory + sep))
+      throw new BadRequest("Invalid backup path");
+    return path;
   }
   protect(name: string): void {
     this.path(name);
