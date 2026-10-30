@@ -30,7 +30,7 @@
     "file-type": "^21.0.0",
     "knex": "^3.1.0",
     "koa-static": "^5.0.0",
-    "ldapts": "^8.0.0",
+    "ldapts": "^9.2.0",
     "mysql2": "^3.15.0",
     "nodemailer": "^10.2.1",
     "otpauth": "^9.4.1",
