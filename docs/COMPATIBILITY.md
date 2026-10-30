@@ -18,6 +18,12 @@ The bundled `packages/server/resources/schema.sql` contains the 27 original base
 
 CI generates fresh reference vectors in an isolated PHP container and requires them alongside the fixed vectors. Defuse integrity is checked before decryption. PHP serialization is read as a bounded data structure, without PHP object instantiation. Unknown classes, references, duplicate/prototype keys, excessive nesting and oversized inputs are rejected. Missing historical keys are reported with table/record context. See [NOTICE.md](../NOTICE.md).
 
+## XML account import
+
+For a sysPass XML export, enter the **Export password** used to encrypt the file and the **Original sysPass master password** used to protect its account passwords. These can be different passwords. For an unencrypted XML file, leave the export password empty and supply the original master password. nodePass XML exports use their export password for both layers, so the master-password field can remain empty.
+
+Encrypted imports validate any supplied signed integrity hash and every Defuse ciphertext before offering a preview. Original sysPass exports and early nodePass exports use different hash inputs; both authenticated formats are supported. Incorrect passwords or damaged ciphertext produce a rejected import with no account writes. The preview shows names and a count; the separate import action creates new accounts in the selected target category, client and group. It does not perform a full database migration.
+
 ## Account permissions
 
 Application and account administrators can access ordinary accounts independently of group membership. Personal private accounts remain restricted to their owner; group-private accounts require the user's primary group, including for administrators. A displayed main group is not an exclusive access list: explicit user and additional group grants can also permit access to non-private accounts.

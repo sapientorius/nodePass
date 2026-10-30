@@ -10,6 +10,7 @@ Derived/copied material includes:
 
 - `packages/server/resources/schema.sql`: the 27 base-table definitions derived from upstream `schemas/dbstructure.sql`; `schema.json` describes that baseline.
 - `tests/fixtures/syspass-account-crypt.xml`: upstream `tests/res/datasets/syspass_accountCrypt.xml`.
+- `tests/fixtures/syspass-export.xml` and `syspass-export-encrypted.xml`: upstream `tests/res/import/data_syspass.xml` and `data_syspass_encrypted.xml`, used to verify XML export interoperability independently of nodePass exports.
 - `tests/fixtures/config.xml`: upstream `tests/res/config/config.xml`.
 - Compatibility behavior informed by upstream configuration, serialization, encryption, API and Authenticator data formats. The new application does not execute upstream PHP.
 

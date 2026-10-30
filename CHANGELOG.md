@@ -2,6 +2,20 @@
 
 Versions before 1.0 may include breaking changes in minor releases. Patch releases contain compatible fixes. Release candidates are intended for evaluation with synthetic data or a separate representative copy.
 
+## [0.1.6]
+
+### Fixed
+
+- sysPass XML imports verify the original export's signed encrypted-node hash and accept separate export and original master passwords. The import form explains both passwords in all 14 supported languages.
+- Incorrect import passwords and damaged encrypted data return actionable validation errors instead of a generic server error. Correcting an error and retrying clears the previous message; successful previews clear uploaded XML and password fields.
+- Added interoperability regressions using original upstream sysPass XML fixtures, including preview, atomic import, rejected-input cleanup and one-time import challenges.
+
+### Compatibility and upgrade notes
+
+- Existing nodePass XML exports remain importable, including the earlier authenticated hash format. New exports use the original sysPass hash convention. Unencrypted sysPass XML still requires the original master password for encrypted account passwords.
+- No database schema change is introduced. Preserve existing secrets, persistent volumes and historical backup keys, and update using the release's verified image digest.
+- The cumulative security catalogue retains NP-2026-001 and NP-2026-002 from version 0.1.3; this release adds no new advisory identifiers.
+
 ## [0.1.5]
 
 ### Added

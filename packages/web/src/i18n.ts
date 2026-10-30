@@ -3,6 +3,7 @@ import { groupMemberMessages } from "./group-members-translations";
 import { confirmationMessages } from "./confirmation-translations";
 import { sessionMessages } from "./session-translations";
 import { eventMessages } from "./event-translations";
+import { transferMessages } from "./transfer-translations";
 import { profilePermissionMessages } from "./profile-permission-translations";
 import { updateMessages } from "./update-translations";
 import { releaseMessages } from "./release-translations";
@@ -115,6 +116,7 @@ export const messages = Object.fromEntries(
         ...confirmationMessages[locale],
         ...sessionMessages[locale],
         ...eventMessages[locale],
+        ...transferMessages[locale],
         backToLogin: backToLoginLabels[locale as Language],
       },
     ];

@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { version } from "@nodepass/contracts";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { once } from "node:events";
 import type { Context } from "koa";
 import { loadConfig } from "../packages/server/src/config.js";
@@ -1283,6 +1283,95 @@ describe.skipIf(!enabled)("real database and HTTP boundaries", () => {
     expect(await runtime.updates.status(999)).toMatchObject({
       available: { acknowledged: false },
     });
+  });
+  it("previews and commits original sysPass XML with separate export and master passwords", async () => {
+    const source = readFileSync(
+        new URL("fixtures/syspass-export-encrypted.xml", import.meta.url),
+        "utf8",
+      ),
+      input = {
+        format: "syspass",
+        source,
+        password: "test_encrypt",
+        masterPassword: "12345678900",
+      },
+      before = await runtime.db("Account").count({ count: "*" }).first(),
+      challenges = await runtime
+        .db("nodepass_challenges")
+        .where({ kind: "import" })
+        .count({ count: "*" })
+        .first();
+    for (const data of [
+      { ...input, password: "wrong" },
+      { ...input, masterPassword: "wrong" },
+      { ...input, masterPassword: undefined },
+      { ...input, masterPassword: {} },
+      {
+        ...input,
+        source: source.replace(/(<Data key=")[a-f0-9]+/, "$1invalid"),
+      },
+    ]) {
+      const rejected = await request("/api/v1/import/preview", "POST", data);
+      expect(rejected.response.status, JSON.stringify(rejected.value)).toBe(
+        400,
+      );
+      expect(JSON.stringify(rejected.value)).not.toMatch(
+        /def10000|def50200|test_encrypt|12345678900|stack/,
+      );
+      expect(await runtime.db("Account").count({ count: "*" }).first()).toEqual(
+        before,
+      );
+      expect(
+        await runtime
+          .db("nodepass_challenges")
+          .where({ kind: "import" })
+          .count({ count: "*" })
+          .first(),
+      ).toEqual(challenges);
+    }
+    const preview = await request("/api/v1/import/preview", "POST", input);
+    expect(preview.response.status, JSON.stringify(preview.value)).toBe(200);
+    expect(preview.value).toMatchObject({
+      count: 2,
+      names: ["Amazon SES", "Google GCP"],
+    });
+    expect(Object.keys(preview.value).sort()).toEqual([
+      "challenge",
+      "count",
+      "names",
+    ]);
+    expect(JSON.stringify(preview.value)).not.toContain("-zVu78~=0ub·");
+    expect(await runtime.db("Account").count({ count: "*" }).first()).toEqual(
+      before,
+    );
+    const pending = await runtime
+      .db("nodepass_challenges")
+      .where({ kind: "import" })
+      .select("value");
+    expect(JSON.stringify(pending)).not.toContain("-zVu78~=0ub·");
+    const commit = {
+        challenge: preview.value.challenge,
+        categoryId: 1,
+        clientId: 1,
+        userGroupId: 1,
+      },
+      imported = await request("/api/v1/import/commit", "POST", commit);
+    expect(imported.response.status, JSON.stringify(imported.value)).toBe(200);
+    expect(imported.value).toEqual({ count: 2 });
+    const row = await runtime
+        .db("Account")
+        .where({ name: "Amazon SES" })
+        .first(),
+      secret = await request(`/api/v1/accounts/${row.id}/secret`, "POST", {});
+    expect(secret.value.password).toBe("-zVu78~=0ub·");
+    expect(
+      (await request("/api/v1/import/commit", "POST", commit)).response.status,
+    ).toBe(401);
+    expect(
+      Number(
+        (await runtime.db("Account").count({ count: "*" }).first())!.count,
+      ),
+    ).toBe(Number(before!.count) + 2);
   });
   it("changes passwords through a fresh confirmation and revokes every old session", async () => {
     expect(
