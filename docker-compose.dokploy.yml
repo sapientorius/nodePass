@@ -1,10 +1,10 @@
 # Dokploy Docker Compose (not Swarm Stack). Configure Domains for app, port 3000.
 # Dokploy adds its own ingress labels/network. Database has no host ports.
 # Import with dokploy.toml to generate persistent secrets automatically.
-# Default: verified nodePass 0.1.4. Override NODEPASS_IMAGE with another verified digest.
+# Default: verified nodePass 0.1.5. Override NODEPASS_IMAGE with another verified digest.
 services:
   app:
-    image: ${NODEPASS_IMAGE:-ghcr.io/sapientorius/nodepass@sha256:4d08c5d930bb53b8b6d494a7207dc17ee56c0f35f6ac1aaf2ec1d0da67800e5b}
+    image: ${NODEPASS_IMAGE:-ghcr.io/sapientorius/nodepass@sha256:3e9e8335a200785152571916fe2a6e70382b70983bb5e26c551ec76640b680f2}
     platform: linux/amd64
     restart: unless-stopped
     init: true
