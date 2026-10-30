@@ -360,7 +360,8 @@ try {
     restoredEnv,
   );
   check(true, "CLI restore decrypts accounts and revokes copied sessions");
-  // Hold a metadata read lock on a later table so replacement stops after earlier DROP statements.
+  // Discover the actual catalogue order; information_schema does not promise alphabetical order.
+  // Hold a metadata read lock on its final table so earlier DROP statements can complete.
   // Only this test's generated application/database containers and volumes are involved.
   const recovery = await request("/api/v1/auth/recovery", "POST", {});
   check(
@@ -416,6 +417,20 @@ try {
     authorization.response.ok && authorization.value.authorization,
     "fresh job-specific restore confirmation",
   );
+  const targetTables = JSON.parse(
+    (
+      await node(
+        "(async()=>{const{loadConfig}=await import('./packages/server/dist/server/src/config.js'),{database}=await import('./packages/server/dist/server/src/db.js'),{inspectTarget}=await import('./packages/server/dist/server/src/migration/restore-validation.js');const db=database(loadConfig());try{process.stdout.write(JSON.stringify((await inspectTarget(db)).filter(row=>row.kind==='BASE TABLE').map(row=>row.table)));}finally{await db.destroy();}})().catch(()=>process.exit(1));",
+        "65532",
+        environment,
+      )
+    ).output,
+  );
+  check(
+    targetTables.length > 1 &&
+      new Set(targetTables).size === targetTables.length,
+    "distinct restore interruption probe and blocker tables",
+  );
   const blocker = prefix + "-blocker";
   await run([
     "run",
@@ -428,9 +443,11 @@ try {
     "-v",
     secrets + ":/run/secrets:ro",
     ...environment,
+    "-e",
+    "NODEPASS_RESTORE_BLOCK_TABLE=" + targetTables.at(-1),
     image,
     "-e",
-    "(async()=>{const{loadConfig}=await import('./packages/server/dist/server/src/config.js'),{database}=await import('./packages/server/dist/server/src/db.js');const db=database(loadConfig()),trx=await db.transaction();await trx('Config').select('*').limit(1);console.log('BLOCKER_READY');const timer=setInterval(()=>{},1000);process.on('SIGTERM',async()=>{clearInterval(timer);await trx.rollback();await db.destroy();});})().catch(()=>process.exit(1));",
+    "(async()=>{const{loadConfig}=await import('./packages/server/dist/server/src/config.js'),{database}=await import('./packages/server/dist/server/src/db.js');const db=database(loadConfig()),trx=await db.transaction();await trx(process.env.NODEPASS_RESTORE_BLOCK_TABLE).select('*').limit(1);console.log('BLOCKER_READY');const timer=setInterval(()=>{},1000);process.on('SIGTERM',async()=>{clearInterval(timer);await trx.rollback();await db.destroy();});})().catch(()=>process.exit(1));",
   ]);
   created.containers.push(blocker);
   await wait(async () =>
@@ -454,9 +471,13 @@ try {
     async () =>
       (
         await node(
-          "(async()=>{const{loadConfig}=await import('./packages/server/dist/server/src/config.js'),{database}=await import('./packages/server/dist/server/src/db.js');const db=database(loadConfig());try{process.stdout.write((await db.schema.hasTable('Account'))?'present':'dropped');}finally{await db.destroy();}})().catch(()=>process.exit(1));",
+          "(async()=>{const{loadConfig}=await import('./packages/server/dist/server/src/config.js'),{database}=await import('./packages/server/dist/server/src/db.js');const db=database(loadConfig());try{process.stdout.write((await db.schema.hasTable(process.env.NODEPASS_RESTORE_PROBE_TABLE))?'present':'dropped');}finally{await db.destroy();}})().catch(()=>process.exit(1));",
           "65532",
-          environment,
+          [
+            ...environment,
+            "-e",
+            "NODEPASS_RESTORE_PROBE_TABLE=" + targetTables[0],
+          ],
         )
       ).output === "dropped",
   );

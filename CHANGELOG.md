@@ -15,6 +15,10 @@ Versions before 1.0 may include breaking changes in minor releases. Patch releas
 - Identity confirmation offers clearer passkey, authenticator and recovery-code choices while preserving pending actions.
 - Event logs resolve user login names and show translated event descriptions. Backup, restore, membership and confirmation workflows have expanded browser and database regression coverage.
 
+### Fixed
+
+- Page headings wrap their actions on narrow screens so longer translated administration titles do not overflow the viewport.
+
 ### Compatibility and upgrade notes
 
 - No database schema change is introduced. Preserve existing secrets, persistent volumes and historical backup keys, and update using the release's verified image digest.
