@@ -1,5 +1,5 @@
 <script lang="ts">
-import { defineComponent, h } from "vue";
+import { defineComponent, h, type VNode } from "vue";
 import {
   useMessage,
   NButton,
@@ -13,10 +13,15 @@ import {
   NSwitch,
   NCheckbox,
   NPopconfirm,
+  type DataTableSortState,
 } from "naive-ui";
 import { api, ApiError } from "../api";
 import { useSession } from "../stores/session";
-import { defaultPolicy, type UserManagement } from "@nodepass/contracts";
+import {
+  defaultPolicy,
+  type UserManagement,
+  type GroupReference,
+} from "@nodepass/contracts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import TransferView from "./TransferView.vue";
@@ -30,12 +35,15 @@ import NInputNumber from "../components/NumberField.vue";
 import NModal from "../components/AccessibleModal.vue";
 import CustomFieldEditor from "../components/CustomFieldEditor.vue";
 import FieldHelp from "../components/FieldHelp.vue";
+import GroupMembersDialog from "../components/GroupMembersDialog.vue";
+import { orderedGroups, sortedAdminRows } from "../admin-table";
 import { profilePermissionGroups } from "../profile-permissions";
 export default defineComponent({
   setup() {
     return { message: useMessage() };
   },
   components: {
+    GroupMembersDialog,
     FieldHelp,
     CustomFieldEditor,
     NButton,
@@ -74,8 +82,51 @@ export default defineComponent({
     accountAccessLoaded: false,
     legacyEvents: false,
     permissionGroups: profilePermissionGroups,
+    membersGroup: null as GroupReference | null,
+    loadRevision: 0,
   }),
   computed: {
+    tableSort(): { field: string; direction: "asc" | "desc" } {
+      const fields =
+        this.section === "users"
+          ? [
+              "name",
+              "login",
+              "email",
+              "primaryGroup",
+              "additionalGroups",
+              "isDisabled",
+            ]
+          : ["name", "description"];
+      const { sort, direction } = this.$route.query;
+      return typeof sort === "string" &&
+        fields.includes(sort) &&
+        (direction === "asc" || direction === "desc")
+        ? { field: sort, direction }
+        : { field: "name", direction: "asc" };
+    },
+    sortField(): string {
+      return this.tableSort.field;
+    },
+    sortDirection(): "asc" | "desc" {
+      return this.tableSort.direction;
+    },
+    canReadGroupMembers() {
+      const viewer = useSession().viewer;
+      return (
+        !!viewer && (viewer.isAppAdmin || viewer.permissions.mgmUsers === true)
+      );
+    },
+    sortedRows() {
+      return ["users", "groups"].includes(this.section)
+        ? sortedAdminRows(
+            this.rows,
+            this.sortField,
+            this.sortDirection,
+            this.$i18n.locale,
+          )
+        : this.rows;
+    },
     accessEpoch() {
       return useSession().accessEpoch;
     },
@@ -162,21 +213,53 @@ export default defineComponent({
           : [
               "name",
               ...(this.section === "users"
-                ? ["login", "email"]
+                ? ["login", "email", "primaryGroup", "additionalGroups"]
                 : this.section === "profiles"
                   ? []
                   : ["description"]),
             ];
       return [
         ...keys.map((k) => ({
-          title: this.$t(
-            ["name", "login"].includes(k)
-              ? k
-              : this.section === "events"
-                ? eventTitles[k]!
-                : "notes",
+          ...this.sortColumn(
+            k,
+            this.$t(
+              [
+                "name",
+                "login",
+                "email",
+                "primaryGroup",
+                "additionalGroups",
+              ].includes(k)
+                ? k
+                : this.section === "events"
+                  ? eventTitles[k]!
+                  : "notes",
+            ),
           ),
-          key: k,
+          ...(k === "primaryGroup"
+            ? { render: (row: any) => row.primaryGroup?.name ?? "—" }
+            : {}),
+          ...(k === "additionalGroups"
+            ? {
+                render: (row: any) =>
+                  row.additionalGroups?.length
+                    ? h(
+                        "div",
+                        { class: "user-table-groups" },
+                        orderedGroups(
+                          row.additionalGroups,
+                          this.$i18n.locale,
+                        ).map((group) =>
+                          h(
+                            NTag,
+                            { size: "small", bordered: false, key: group.id },
+                            { default: () => group.name },
+                          ),
+                        ),
+                      )
+                    : "—",
+              }
+            : {}),
           ...(this.section === "events" && ["userId", "target"].includes(k)
             ? {
                 render: (row: any) => {
@@ -208,8 +291,7 @@ export default defineComponent({
         ...(this.section === "users"
           ? [
               {
-                title: this.$t("signIn"),
-                key: "isDisabled",
+                ...this.sortColumn("isDisabled", this.$t("signIn")),
                 render: (row: any) =>
                   h(
                     NTag,
@@ -237,6 +319,24 @@ export default defineComponent({
                 key: "actions",
                 render: (row: any) =>
                   h("div", { class: "table-actions" }, [
+                    ...(this.section === "groups" && this.canReadGroupMembers
+                      ? [
+                          h(
+                            NButton,
+                            {
+                              size: "small",
+                              quaternary: true,
+                              onClick: () => {
+                                this.membersGroup = {
+                                  id: row.id,
+                                  name: row.name,
+                                };
+                              },
+                            },
+                            { default: () => this.$t("groupMembers") },
+                          ),
+                        ]
+                      : []),
                     h(
                       NButton,
                       {
@@ -296,6 +396,10 @@ export default defineComponent({
   },
   watch: {
     accessEpoch() {
+      this.loadRevision++;
+      this.membersGroup = null;
+      this.groups = [];
+      this.profiles = [];
       this.form = {};
       this.editingManagement = null;
       this.show = false;
@@ -311,17 +415,89 @@ export default defineComponent({
     section: {
       immediate: true,
       handler() {
+        this.membersGroup = null;
         void this.load();
       },
     },
   },
   beforeUnmount() {
+    this.loadRevision++;
+    this.membersGroup = null;
     this.active = false;
     this.form = {};
     this.show = false;
     this.rows = [];
   },
   methods: {
+    setTableSort(field: string, direction: "asc" | "desc") {
+      void this.$router.replace({
+        query: { ...this.$route.query, sort: field, direction },
+      });
+    },
+    sortColumn(key: string, title: string) {
+      if (!["users", "groups"].includes(this.section)) return { key, title };
+      const selected = this.sortField === key;
+      const next = selected && this.sortDirection === "asc" ? "desc" : "asc";
+      // NaiveUI exposes the visual sorter but no header-attribute API.
+      const labelHeader = (node: VNode) =>
+        node.el
+          ?.closest("th")
+          ?.setAttribute(
+            "aria-sort",
+            selected
+              ? this.sortDirection === "asc"
+                ? "ascending"
+                : "descending"
+              : "none",
+          );
+      return {
+        key,
+        title: () =>
+          h(
+            "button",
+            {
+              type: "button",
+              class: "table-sort-title",
+              onVnodeMounted: labelHeader,
+              onVnodeUpdated: labelHeader,
+              "aria-label": `${this.$t("sort")}: ${title} · ${this.$t(next === "asc" ? "ascending" : "descending")}`,
+              onClick: (event: MouseEvent) => {
+                event.stopPropagation();
+                this.setTableSort(key, next);
+              },
+            },
+            title,
+          ),
+        sorter: true as const,
+        sortOrder: selected
+          ? this.sortDirection === "asc"
+            ? ("ascend" as const)
+            : ("descend" as const)
+          : (false as const),
+        customNextSortOrder: (order: string | false) =>
+          order === "ascend" ? ("descend" as const) : ("ascend" as const),
+      };
+    },
+    changeTableSort(state: DataTableSortState | DataTableSortState[] | null) {
+      if (!state || Array.isArray(state) || !state.order) return;
+      const fields =
+        this.section === "users"
+          ? [
+              "name",
+              "login",
+              "email",
+              "primaryGroup",
+              "additionalGroups",
+              "isDisabled",
+            ]
+          : ["name", "description"];
+      if (fields.includes(String(state.columnKey))) {
+        this.setTableSort(
+          String(state.columnKey),
+          state.order === "descend" ? "desc" : "asc",
+        );
+      }
+    },
     rowEditable(row: any) {
       return (
         this.section !== "users" ||
@@ -359,6 +535,14 @@ export default defineComponent({
       }
     },
     async load() {
+      const revision = ++this.loadRevision;
+      const section = this.section;
+      const accessEpoch = this.accessEpoch;
+      const current = () =>
+        this.active &&
+        revision === this.loadRevision &&
+        section === this.section &&
+        accessEpoch === this.accessEpoch;
       await this.run(async () => {
         if (this.section === "security") {
           this.accountAccessLoaded = false;
@@ -376,18 +560,26 @@ export default defineComponent({
             "presets",
             "updates",
           ].includes(this.section)
-        )
-          this.rows = await api(
-            this.section +
+        ) {
+          const rows = await api(
+            section +
               (this.section === "events" && this.legacyEvents
                 ? "?legacy=true"
                 : ""),
           );
-        if (this.section === "users")
-          [this.groups, this.profiles] = await Promise.all([
+          if (!current()) return;
+          this.rows = rows;
+        }
+        if (section === "users") {
+          const [groups, profiles] = await Promise.all([
             api("groups"),
             api("profiles"),
           ]);
+          if (current()) {
+            this.groups = groups;
+            this.profiles = profiles;
+          }
+        }
       });
     },
     open(row?: any) {
@@ -623,13 +815,23 @@ export default defineComponent({
     >
       <n-data-table
         :columns="columns"
-        :data="rows"
-        :scroll-x="section === 'users' ? 700 : undefined"
+        :data="sortedRows"
+        :remote="['users', 'groups'].includes(section)"
+        :scroll-x="
+          section === 'users' ? 1100 : section === 'groups' ? 650 : undefined
+        "
+        :single-line="false"
         :loading="busy"
         :bordered="false"
         :row-key="(row: any) => row.id"
+        @update:sorter="changeTableSort"
       />
     </div>
+    <GroupMembersDialog
+      v-if="membersGroup && canReadGroupMembers && section === 'groups'"
+      :group="membersGroup"
+      @close="membersGroup = null"
+    />
     <n-modal
       v-model:show="show"
       preset="card"
@@ -821,6 +1023,22 @@ export default defineComponent({
   </section>
 </template>
 <style scoped>
+:deep(.user-table-groups) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+:deep(.user-table-groups .n-tag) {
+  max-width: 100%;
+  height: auto;
+  min-height: 22px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:deep(.user-table-groups .n-tag__content) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .activity-table-scroll {
   overflow-x: auto;
 }

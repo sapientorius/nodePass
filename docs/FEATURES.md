@@ -37,6 +37,10 @@ Card/list selection and authenticator-based TOTP existed in sysPass. They are pr
 
 Languages: German, English, Spanish, Catalan, Hungarian, French, Polish, Russian, Dutch, Portuguese, Italian, Danish, Faroese and Japanese.
 
+User and group tables support ascending and descending column sorting. The user table shows primary and additional groups. Application administrators and users with `mgmUsers` can open a group's Members dialog to browse primary and additional memberships separately, including disabled users. Each list has independent pagination; redundant primary-group assignments are omitted from additional memberships. Group-management permission alone does not disclose memberships.
+
+The read-only `GET /api/v1/groups/:id/members` endpoint accepts `membership=primary|additional`, `limit` (default 25, maximum 100), and `skip` (default 0). It returns `{ total, limit, skip, data }`, with only user ID, name and login in each entry. Membership paging reaches all members, while overview sorting applies to the existing maximum of 1,000 loaded users or groups.
+
 ## Deliberate limits
 
 - PHP plugin execution is not ported. Authenticator **2.2** has a dedicated data migration; unknown plugin records remain stored without executing their code.

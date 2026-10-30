@@ -2,6 +2,7 @@ import { fieldModules } from "../compat/field-modules.js";
 import { BadRequest, Forbidden, NotFound } from "@feathersjs/errors";
 import type { Id } from "@feathersjs/feathers";
 import { createHash, randomBytes } from "node:crypto";
+import type { GroupReference } from "@nodepass/contracts";
 import { audit, type Database, type Row } from "../db.js";
 import { identity, integer, type ServiceParams } from "./accounts.js";
 import { checkStrength, hashPassword } from "../security/password.js";
@@ -181,6 +182,8 @@ export class Catalogue {
                 "isAdminAcc",
                 "isLdap",
                 "groups",
+                "primaryGroup",
+                "additionalGroups",
                 "management",
               ]
             : []),
@@ -195,6 +198,30 @@ export class Catalogue {
     return Object.fromEntries(
       ["id", ...this.definition.fields].map((k) => [k, row[k]]),
     );
+  }
+  private async groupReferences(
+    rows: Row[],
+    params: ServiceParams,
+  ): Promise<void> {
+    const { user } = identity(params);
+    if (!rows.length || (!user.isAdminApp && !enabled(user.profile.mgmUsers)))
+      return;
+    const ids = [
+      ...new Set(rows.flatMap((row) => [row.userGroupId, ...row.groups])),
+    ];
+    const groups: GroupReference[] = await this.db("UserGroup")
+      .select("id", "name")
+      .whereIn("id", ids)
+      .orderBy("name")
+      .orderBy("id");
+    const byId = new Map(groups.map((group) => [group.id, group]));
+    for (const row of rows) {
+      row.primaryGroup = byId.get(row.userGroupId) ?? null;
+      const additional = new Set(row.groups);
+      row.additionalGroups = groups.filter(
+        (group) => group.id !== row.userGroupId && additional.has(group.id),
+      );
+    }
   }
   async find(params: ServiceParams = {}): Promise<Row[]> {
     identity(params);
@@ -222,6 +249,7 @@ export class Catalogue {
           row,
           mapped.get(row.userProfileId) ?? {},
         );
+      await this.groupReferences(rows, params);
     }
     return rows.map((r) => this.present(r, params));
   }
@@ -243,6 +271,7 @@ export class Catalogue {
         row,
         mapData(profile?.profile),
       );
+      await this.groupReferences([row], params);
     }
     return this.present(row, params);
   }

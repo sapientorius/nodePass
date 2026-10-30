@@ -1,4 +1,5 @@
 import { createI18n } from "vue-i18n";
+import { groupMemberMessages } from "./group-members-translations";
 import { confirmationMessages } from "./confirmation-translations";
 import { sessionMessages } from "./session-translations";
 import { eventMessages } from "./event-translations";
@@ -106,6 +107,7 @@ export const messages = Object.fromEntries(
         ...updateMessages[locale],
         ...releaseMessages[locale],
         ...userGroupMessages[locale],
+        ...groupMemberMessages[locale],
         ...accountAccessMessages[locale],
         ...profilePermissionMessages[locale],
         ...userManagementMessages[locale],

@@ -60,6 +60,16 @@ export interface UserManagement {
   canResetPassword: boolean;
   reason?: "permission" | "self" | "administrator" | "groups" | "profile";
 }
+export interface GroupReference {
+  id: number;
+  name: string;
+}
+export interface GroupMember {
+  id: number;
+  name: string;
+  login: string;
+}
+export type GroupMembership = "primary" | "additional";
 export interface Account {
   id: number;
   name: string;

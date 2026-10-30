@@ -36,6 +36,7 @@ export function openApi(
       if (["HEAD", "OPTIONS"].includes(method)) continue;
       const write = !["GET", "HEAD"].includes(method),
         users = path === "/api/v1/users" || path === "/api/v1/users/{id}",
+        members = path === "/api/v1/groups/{id}/members",
         confirmation = path === "/api/v1/auth/confirm",
         restoreConfirmation =
           /^\/api\/v1\/backup-restores\/\{id\}\/confirm$/.test(path),
@@ -50,7 +51,17 @@ export function openApi(
         security: restoreStatus ? [{ backupJobToken: [] }] : [{ session: [] }],
         parameters: [
           ...parameters,
-          ...(path === "/api/v1/backups" && method === "GET"
+          ...(members
+            ? [
+                {
+                  name: "membership",
+                  in: "query",
+                  required: true,
+                  schema: { type: "string", enum: ["primary", "additional"] },
+                },
+              ]
+            : []),
+          ...((path === "/api/v1/backups" || members) && method === "GET"
             ? [
                 {
                   name: "skip",
@@ -219,8 +230,30 @@ export function openApi(
           : {}),
         responses: {
           "200": {
-            description:
-              "Operation completed; responses never include password hashes or vault keys.",
+            description: members
+              ? "Group members, ordered by name, login and ID. Requires application administrator status or mgmUsers. Includes disabled users; additional memberships exclude the primary group."
+              : "Operation completed; responses never include password hashes or vault keys.",
+            ...(members
+              ? {
+                  content: {
+                    "application/json": {
+                      schema: {
+                        type: "object",
+                        required: ["total", "limit", "skip", "data"],
+                        properties: {
+                          total: { type: "integer" },
+                          limit: { type: "integer" },
+                          skip: { type: "integer" },
+                          data: {
+                            type: "array",
+                            items: { $ref: "#/components/schemas/GroupMember" },
+                          },
+                        },
+                      },
+                    },
+                  },
+                }
+              : {}),
             ...(users
               ? {
                   content: {
@@ -312,11 +345,39 @@ export function openApi(
           },
         },
         AccountInput: accountInput,
+        GroupReference: {
+          type: "object",
+          readOnly: true,
+          required: ["id", "name"],
+          properties: { id: { type: "integer" }, name: { type: "string" } },
+        },
+        GroupMember: {
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "name", "login"],
+          properties: {
+            id: { type: "integer" },
+            name: { type: "string" },
+            login: { type: "string" },
+          },
+        },
         UserSummary: {
           type: "object",
           description:
             "Management metadata is returned only to application administrators or users with mgmUsers. It is read-only; writes always recheck current authorization.",
           properties: {
+            primaryGroup: {
+              oneOf: [
+                { $ref: "#/components/schemas/GroupReference" },
+                { type: "null" },
+              ],
+              readOnly: true,
+            },
+            additionalGroups: {
+              type: "array",
+              items: { $ref: "#/components/schemas/GroupReference" },
+              readOnly: true,
+            },
             management: { $ref: "#/components/schemas/UserManagement" },
           },
         },

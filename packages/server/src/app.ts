@@ -27,6 +27,7 @@ import {
 } from "./security/auth.js";
 import { Accounts, integer, type ServiceParams } from "./services/accounts.js";
 import { Catalogue } from "./services/catalogue.js";
+import { groupMembers } from "./services/group-members.js";
 import { Resources } from "./services/resources.js";
 import { Migration } from "./migration/service.js";
 import { setupFailure } from "./migration/errors.js";
@@ -962,6 +963,12 @@ export async function createApp(
       await audit(trx, id.user.id, "security.account-access");
     });
     ctx.body = { fullGroupAccess: data.fullGroupAccess };
+  });
+  router.get("/api/v1/groups/:id/members", async (ctx) => {
+    ctx.body = await groupMembers(db, ctx.params.id, {
+      ...(await params(ctx)),
+      query: ctx.query,
+    });
   });
   router.get("/api/v1/events", async (ctx) => {
     await permission(ctx, "evl");

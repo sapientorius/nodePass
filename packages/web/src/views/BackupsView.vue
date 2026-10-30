@@ -109,6 +109,21 @@ export default defineComponent({
       );
     },
   },
+  watch: {
+    async restoreActive(active: boolean) {
+      if (!active) return;
+      await this.$nextTick();
+      const card = this.$refs.restoreCard as HTMLElement | undefined;
+      if (!this.restoreActive || !card) return;
+      card.focus({ preventScroll: true });
+      card.scrollIntoView({
+        block: "start",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+      });
+    },
+  },
   mounted() {
     void this.load();
     this.timer = setInterval(() => void this.poll(), 2000);
@@ -358,6 +373,80 @@ export default defineComponent({
 <template>
   <div class="backup-settings" :aria-busy="busy || loading">
     <n-alert v-if="error" type="error" role="alert">{{ error }}</n-alert>
+    <section
+      v-if="admin && restoreActive"
+      ref="restoreCard"
+      class="backup-restore"
+      tabindex="-1"
+      :aria-label="$t('backupRestore')"
+    >
+      <PanelCard :title="$t('backupRestore')">
+        <n-alert type="warning">{{ $t("backupRestoreHelp") }}</n-alert>
+        <p role="status">
+          {{ $t(backupStepKey(status!.step)) }} · {{ size(status!.offset) }}
+        </p>
+        <n-alert v-if="status?.error" type="error" role="alert">{{
+          $t(
+            status.error === "verification"
+              ? "backupVerification"
+              : "backupFailed",
+          )
+        }}</n-alert>
+        <n-form
+          v-if="status?.state === 'upload' && status.uploadComplete"
+          @submit.prevent="check"
+        >
+          <n-form-item :label="$t('backupKey')"
+            ><n-input
+              v-model:value="key"
+              type="password"
+              autocomplete="off"
+              :maxlength="100"
+              :input-props="{
+                'aria-label': $t('backupKey'),
+                spellcheck: false,
+              }"
+          /></n-form-item>
+          <n-button
+            attr-type="submit"
+            type="primary"
+            :disabled="!key || busy"
+            >{{ $t("backupCheck") }}</n-button
+          >
+        </n-form>
+        <n-form
+          v-if="status?.state === 'ready'"
+          @submit.prevent="showConfirm = true"
+        >
+          <p>{{ $t("backupCreated") }}: {{ date(status.createdAt) }}</p>
+          <p>
+            {{ $t("accounts") }}: {{ status.counts?.Account ?? 0 }} ·
+            {{ $t("users") }}: {{ status.counts?.User ?? 0 }}
+          </p>
+          <p>{{ $t("backupConfirmHelp") }}</p>
+          <code class="backup-confirmation">{{ status.confirmation }}</code>
+          <n-form-item :label="$t('confirm')"
+            ><n-input
+              v-model:value="confirmation"
+              autocomplete="off"
+              :input-props="{ 'aria-label': $t('confirm'), spellcheck: false }"
+          /></n-form-item>
+          <n-button
+            attr-type="submit"
+            type="error"
+            :disabled="confirmation !== status.confirmation || busy"
+            >{{ $t("backupReplace") }}</n-button
+          >
+        </n-form>
+        <n-button
+          v-if="status && ['upload', 'ready'].includes(status.state)"
+          class="backup-notice"
+          :disabled="busy"
+          @click="cancel"
+          >{{ $t("cancel") }}</n-button
+        >
+      </PanelCard>
+    </section>
     <n-card>
       <p class="muted">{{ $t("backupHelp") }}</p>
       <div class="backup-actions">
@@ -505,66 +594,6 @@ export default defineComponent({
         $t("backupFailed")
       }}</n-alert>
     </PanelCard>
-    <PanelCard v-if="admin && restoreActive" :title="$t('backupRestore')">
-      <n-alert type="warning">{{ $t("backupRestoreHelp") }}</n-alert>
-      <p role="status">
-        {{ $t(backupStepKey(status!.step)) }} · {{ size(status!.offset) }}
-      </p>
-      <n-alert v-if="status?.error" type="error" role="alert">{{
-        $t(
-          status.error === "verification"
-            ? "backupVerification"
-            : "backupFailed",
-        )
-      }}</n-alert>
-      <n-form
-        v-if="status?.state === 'upload' && status.uploadComplete"
-        @submit.prevent="check"
-      >
-        <n-form-item :label="$t('backupKey')"
-          ><n-input
-            v-model:value="key"
-            type="password"
-            autocomplete="off"
-            :maxlength="100"
-            :input-props="{ 'aria-label': $t('backupKey'), spellcheck: false }"
-        /></n-form-item>
-        <n-button attr-type="submit" type="primary" :disabled="!key || busy">{{
-          $t("backupCheck")
-        }}</n-button>
-      </n-form>
-      <n-form
-        v-if="status?.state === 'ready'"
-        @submit.prevent="showConfirm = true"
-      >
-        <p>{{ $t("backupCreated") }}: {{ date(status.createdAt) }}</p>
-        <p>
-          {{ $t("accounts") }}: {{ status.counts?.Account ?? 0 }} ·
-          {{ $t("users") }}: {{ status.counts?.User ?? 0 }}
-        </p>
-        <p>{{ $t("backupConfirmHelp") }}</p>
-        <code class="backup-confirmation">{{ status.confirmation }}</code>
-        <n-form-item :label="$t('confirm')"
-          ><n-input
-            v-model:value="confirmation"
-            autocomplete="off"
-            :input-props="{ 'aria-label': $t('confirm'), spellcheck: false }"
-        /></n-form-item>
-        <n-button
-          attr-type="submit"
-          type="error"
-          :disabled="confirmation !== status.confirmation || busy"
-          >{{ $t("backupReplace") }}</n-button
-        >
-      </n-form>
-      <n-button
-        v-if="status && ['upload', 'ready'].includes(status.state)"
-        class="backup-notice"
-        :disabled="busy"
-        @click="cancel"
-        >{{ $t("cancel") }}</n-button
-      >
-    </PanelCard>
     <n-modal
       v-model:show="showConfirm"
       preset="card"
@@ -584,6 +613,9 @@ export default defineComponent({
 .backup-settings {
   display: grid;
   gap: 20px;
+}
+.backup-restore {
+  scroll-margin-top: 20px;
 }
 .backup-row,
 .backup-actions {
@@ -645,6 +677,11 @@ export default defineComponent({
 }
 .backup-notice {
   margin-top: 16px;
+}
+@media (max-width: 650px) {
+  .backup-restore {
+    scroll-margin-top: 72px;
+  }
 }
 @media (max-width: 600px) {
   .backup-form-grid,
