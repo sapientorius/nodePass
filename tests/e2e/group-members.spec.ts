@@ -115,15 +115,21 @@ async function fixture(page: Page) {
     else if (path === "users") result = users;
     else if (path === "groups") result = groups;
     else if (path === "profiles")
-      result = [{ id: 1, name: "Reader", profile: {} }];
+      result = [
+        { id: 1, name: "Profile 10", profile: {} },
+        { id: 2, name: "Profile 2", profile: {} },
+        { id: 3, name: "Empty profile", profile: {} },
+      ];
     else if (path === "accounts")
       result = { total: 0, limit: 12, skip: 0, data: [] };
-    else if (/^groups\/\d+\/members$/.test(path)) {
+    else if (/^(groups|profiles)\/\d+\/members$/.test(path)) {
       const id = Number(path.split("/")[1]);
-      const kind = url.searchParams.get("membership");
+      const kind = path.startsWith("profiles/")
+        ? "profile"
+        : url.searchParams.get("membership");
       const skip = Number(url.searchParams.get("skip"));
-      const total = id === 3 ? 0 : kind === "primary" ? 27 : 26;
-      if (state.failPrimary && kind === "primary") {
+      const total = id === 3 ? 0 : kind === "additional" ? 26 : 27;
+      if (state.failPrimary && kind !== "additional") {
         status = 500;
         result = { message: "Synthetic membership failure" };
       } else
@@ -404,6 +410,159 @@ test("membership requests cannot repopulate a closed dialog after navigation or 
       exact: true,
     }),
   ).toBeVisible();
+});
+
+test("profile members page independently of groups, sort profiles, retry failures and show empty profiles", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.admin = true;
+  await page.goto("/manage/profiles");
+  const names = () =>
+    page.locator(".n-data-table-tbody tr td:first-child").allTextContents();
+  await expect
+    .poll(names)
+    .toEqual(["Empty profile", "Profile 2", "Profile 10"]);
+  await page
+    .getByRole("button", { name: "Sort by: Name · Descending", exact: true })
+    .press("Enter");
+  await expect
+    .poll(names)
+    .toEqual(["Profile 10", "Profile 2", "Empty profile"]);
+  await page
+    .getByRole("button", { name: "Sort by: Name · Ascending", exact: true })
+    .press("Space");
+  state.failPrimary = true;
+  await openMembers(page, "Profile 10");
+  const dialog = page.getByRole("dialog", {
+    name: "Members: Profile 10",
+    exact: true,
+  });
+  await expect(dialog.getByRole("alert")).toContainText(
+    "The members could not be loaded.",
+  );
+  state.failPrimary = false;
+  await dialog.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(dialog).toContainText("27 members");
+  await expect(dialog.locator("[data-membership]")).toHaveCount(1);
+  await expect(dialog).toContainText("First profile 1");
+  await dialog.getByText("2", { exact: true }).click();
+  await expect(dialog).toContainText("First profile 26");
+  await expect(dialog.getByRole("row")).toHaveCount(3);
+  await page.screenshot({
+    path: "output/playwright/profile-members-desktop-light.png",
+    animations: "disabled",
+  });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await openMembers(page, "Empty profile");
+  await expect(page.getByRole("dialog")).toContainText("0 members");
+  await expect(
+    page.getByRole("dialog").getByText("No entries yet", { exact: true }),
+  ).toBeVisible();
+  expect(
+    state.requests.filter((request) => request.startsWith("profiles/")),
+  ).toEqual([
+    "profiles/1/members?limit=25&skip=0",
+    "profiles/1/members?limit=25&skip=0",
+    "profiles/1/members?limit=25&skip=25",
+    "profiles/3/members?limit=25&skip=0",
+  ]);
+  expect(state.writes).toEqual([]);
+});
+
+test("late profile replies cannot replace another profile or survive revoked access and navigation", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.admin = true;
+  await page.goto("/manage/profiles");
+  state.hold = true;
+  await openMembers(page, "Profile 10");
+  await expect.poll(() => state.pending.length).toBe(1);
+  await page.keyboard.press("Escape");
+  state.hold = false;
+  await openMembers(page, "Profile 2");
+  await expect(page.getByRole("dialog")).toContainText("Second profile 1");
+  for (const release of state.pending.splice(0)) await release();
+  await expect(page.getByRole("dialog")).not.toContainText("First profile");
+  await page.keyboard.press("Escape");
+  state.hold = true;
+  await openMembers(page, "Profile 10");
+  await expect.poll(() => state.pending.length).toBe(1);
+  state.admin = false;
+  state.users = false;
+  state.revision++;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("dialog")).toBeHidden();
+  for (const release of state.pending.splice(0)) await release();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  state.admin = true;
+  state.users = true;
+  state.revision++;
+  await page.goto("/manage/groups");
+  await page.getByRole("link", { name: "Profiles", exact: true }).click();
+  await openMembers(page, "Profile 10");
+  await expect.poll(() => state.pending.length).toBe(1);
+  await page.goBack();
+  for (const release of state.pending.splice(0)) await release();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(
+    page.getByRole("heading", { name: "Groups", exact: true }),
+  ).toBeVisible();
+});
+
+test("profile membership dialog supports all locales, both themes and accessible mobile scrolling", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.admin = true;
+  for (const [index, language] of languages.entries()) {
+    state.language = language;
+    await page.setViewportSize({ width: index % 2 ? 320 : 390, height: 844 });
+    await page.addInitScript(
+      (theme) => localStorage.setItem("nodepass-theme", theme),
+      index % 2 ? "dark" : "light",
+    );
+    await page.goto("/manage/profiles");
+    const action = groupRow(page, "Profile 10").getByRole("button").first();
+    await action.focus();
+    await action.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.locator(".n-data-table-tbody tr")).toHaveCount(25);
+    await expect(dialog.locator("[data-membership]")).toHaveCount(1);
+    await expect(dialog).not.toContainText("memberCount");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(
+      await dialog.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+    const region = dialog.locator(".members-table-scroll");
+    await region.focus();
+    await region.press("ArrowDown");
+    await expect
+      .poll(() => region.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    if (["de_DE", "en_US", "ja_JP"].includes(language)) {
+      const audit = await new AxeBuilder({ page })
+        .include('[role="dialog"]')
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+        .analyze();
+      expect(audit.violations).toEqual([]);
+    }
+    if (language === "en_US")
+      await page.screenshot({
+        path: "output/playwright/profile-members-mobile-dark.png",
+        animations: "disabled",
+      });
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(action).toBeFocused();
+  }
 });
 
 test("all locales, both themes, keyboard focus, mobile layout and scoped accessibility", async ({

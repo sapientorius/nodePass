@@ -17,11 +17,7 @@ import {
 } from "naive-ui";
 import { api, ApiError } from "../api";
 import { useSession } from "../stores/session";
-import {
-  defaultPolicy,
-  type UserManagement,
-  type GroupReference,
-} from "@nodepass/contracts";
+import { defaultPolicy, type UserManagement } from "@nodepass/contracts";
 import Icon from "../components/Icon.vue";
 import PageAccent from "../components/PageAccent.vue";
 import TransferView from "./TransferView.vue";
@@ -35,7 +31,7 @@ import NInputNumber from "../components/NumberField.vue";
 import NModal from "../components/AccessibleModal.vue";
 import CustomFieldEditor from "../components/CustomFieldEditor.vue";
 import FieldHelp from "../components/FieldHelp.vue";
-import GroupMembersDialog from "../components/GroupMembersDialog.vue";
+import MembersDialog from "../components/MembersDialog.vue";
 import { orderedGroups, sortedAdminRows } from "../admin-table";
 import { profilePermissionGroups } from "../profile-permissions";
 export default defineComponent({
@@ -43,7 +39,7 @@ export default defineComponent({
     return { message: useMessage() };
   },
   components: {
-    GroupMembersDialog,
+    MembersDialog,
     FieldHelp,
     CustomFieldEditor,
     NButton,
@@ -82,7 +78,11 @@ export default defineComponent({
     accountAccessLoaded: false,
     legacyEvents: false,
     permissionGroups: profilePermissionGroups,
-    membersGroup: null as GroupReference | null,
+    membersTarget: null as {
+      kind: "groups" | "profiles";
+      id: number;
+      name: string;
+    } | null,
     loadRevision: 0,
   }),
   computed: {
@@ -97,7 +97,9 @@ export default defineComponent({
               "additionalGroups",
               "isDisabled",
             ]
-          : ["name", "description"];
+          : this.section === "profiles"
+            ? ["name"]
+            : ["name", "description"];
       const { sort, direction } = this.$route.query;
       return typeof sort === "string" &&
         fields.includes(sort) &&
@@ -111,14 +113,14 @@ export default defineComponent({
     sortDirection(): "asc" | "desc" {
       return this.tableSort.direction;
     },
-    canReadGroupMembers() {
+    canReadMembers() {
       const viewer = useSession().viewer;
       return (
         !!viewer && (viewer.isAppAdmin || viewer.permissions.mgmUsers === true)
       );
     },
     sortedRows() {
-      return ["users", "groups"].includes(this.section)
+      return ["users", "groups", "profiles"].includes(this.section)
         ? sortedAdminRows(
             this.rows,
             this.sortField,
@@ -319,7 +321,8 @@ export default defineComponent({
                 key: "actions",
                 render: (row: any) =>
                   h("div", { class: "table-actions" }, [
-                    ...(this.section === "groups" && this.canReadGroupMembers
+                    ...(["groups", "profiles"].includes(this.section) &&
+                    this.canReadMembers
                       ? [
                           h(
                             NButton,
@@ -327,7 +330,8 @@ export default defineComponent({
                               size: "small",
                               quaternary: true,
                               onClick: () => {
-                                this.membersGroup = {
+                                this.membersTarget = {
+                                  kind: this.section as "groups" | "profiles",
                                   id: row.id,
                                   name: row.name,
                                 };
@@ -397,7 +401,7 @@ export default defineComponent({
   watch: {
     accessEpoch() {
       this.loadRevision++;
-      this.membersGroup = null;
+      this.membersTarget = null;
       this.groups = [];
       this.profiles = [];
       this.form = {};
@@ -415,14 +419,14 @@ export default defineComponent({
     section: {
       immediate: true,
       handler() {
-        this.membersGroup = null;
+        this.membersTarget = null;
         void this.load();
       },
     },
   },
   beforeUnmount() {
     this.loadRevision++;
-    this.membersGroup = null;
+    this.membersTarget = null;
     this.active = false;
     this.form = {};
     this.show = false;
@@ -435,7 +439,8 @@ export default defineComponent({
       });
     },
     sortColumn(key: string, title: string) {
-      if (!["users", "groups"].includes(this.section)) return { key, title };
+      if (!["users", "groups", "profiles"].includes(this.section))
+        return { key, title };
       const selected = this.sortField === key;
       const next = selected && this.sortDirection === "asc" ? "desc" : "asc";
       // NaiveUI exposes the visual sorter but no header-attribute API.
@@ -490,7 +495,9 @@ export default defineComponent({
               "additionalGroups",
               "isDisabled",
             ]
-          : ["name", "description"];
+          : this.section === "profiles"
+            ? ["name"]
+            : ["name", "description"];
       if (fields.includes(String(state.columnKey))) {
         this.setTableSort(
           String(state.columnKey),
@@ -816,9 +823,13 @@ export default defineComponent({
       <n-data-table
         :columns="columns"
         :data="sortedRows"
-        :remote="['users', 'groups'].includes(section)"
+        :remote="['users', 'groups', 'profiles'].includes(section)"
         :scroll-x="
-          section === 'users' ? 1100 : section === 'groups' ? 650 : undefined
+          section === 'users'
+            ? 1100
+            : ['groups', 'profiles'].includes(section)
+              ? 650
+              : undefined
         "
         :single-line="false"
         :loading="busy"
@@ -827,10 +838,10 @@ export default defineComponent({
         @update:sorter="changeTableSort"
       />
     </div>
-    <GroupMembersDialog
-      v-if="membersGroup && canReadGroupMembers && section === 'groups'"
-      :group="membersGroup"
-      @close="membersGroup = null"
+    <MembersDialog
+      v-if="membersTarget && canReadMembers && section === membersTarget.kind"
+      :target="membersTarget"
+      @close="membersTarget = null"
     />
     <n-modal
       v-model:show="show"

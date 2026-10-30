@@ -36,7 +36,9 @@ export function openApi(
       if (["HEAD", "OPTIONS"].includes(method)) continue;
       const write = !["GET", "HEAD"].includes(method),
         users = path === "/api/v1/users" || path === "/api/v1/users/{id}",
-        members = path === "/api/v1/groups/{id}/members",
+        groupMembers = path === "/api/v1/groups/{id}/members",
+        profileMembers = path === "/api/v1/profiles/{id}/members",
+        members = groupMembers || profileMembers,
         confirmation = path === "/api/v1/auth/confirm",
         restoreConfirmation =
           /^\/api\/v1\/backup-restores\/\{id\}\/confirm$/.test(path),
@@ -51,7 +53,7 @@ export function openApi(
         security: restoreStatus ? [{ backupJobToken: [] }] : [{ session: [] }],
         parameters: [
           ...parameters,
-          ...(members
+          ...(groupMembers
             ? [
                 {
                   name: "membership",
@@ -230,9 +232,11 @@ export function openApi(
           : {}),
         responses: {
           "200": {
-            description: members
+            description: groupMembers
               ? "Group members, ordered by name, login and ID. Requires application administrator status or mgmUsers. Includes disabled users; additional memberships exclude the primary group."
-              : "Operation completed; responses never include password hashes or vault keys.",
+              : profileMembers
+                ? "Users assigned to this profile, ordered by name, login and ID. Requires application administrator status or mgmUsers. Includes disabled users."
+                : "Operation completed; responses never include password hashes or vault keys.",
             ...(members
               ? {
                   content: {

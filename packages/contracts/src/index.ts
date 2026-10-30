@@ -64,11 +64,12 @@ export interface GroupReference {
   id: number;
   name: string;
 }
-export interface GroupMember {
+export interface MemberSummary {
   id: number;
   name: string;
   login: string;
 }
+export type GroupMember = MemberSummary;
 export type GroupMembership = "primary" | "additional";
 export interface Account {
   id: number;

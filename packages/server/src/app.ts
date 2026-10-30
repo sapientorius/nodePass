@@ -28,6 +28,7 @@ import {
 import { Accounts, integer, type ServiceParams } from "./services/accounts.js";
 import { Catalogue } from "./services/catalogue.js";
 import { groupMembers } from "./services/group-members.js";
+import { profileMembers } from "./services/profile-members.js";
 import { Resources } from "./services/resources.js";
 import { Migration } from "./migration/service.js";
 import { setupFailure } from "./migration/errors.js";
@@ -966,6 +967,12 @@ export async function createApp(
   });
   router.get("/api/v1/groups/:id/members", async (ctx) => {
     ctx.body = await groupMembers(db, ctx.params.id, {
+      ...(await params(ctx)),
+      query: ctx.query,
+    });
+  });
+  router.get("/api/v1/profiles/:id/members", async (ctx) => {
+    ctx.body = await profileMembers(db, ctx.params.id, {
       ...(await params(ctx)),
       query: ctx.query,
     });

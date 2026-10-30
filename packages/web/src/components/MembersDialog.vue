@@ -1,12 +1,7 @@
 <script lang="ts">
 import { defineComponent, type PropType } from "vue";
 import { NButton, NDataTable, NPagination } from "naive-ui";
-import type {
-  GroupMember,
-  GroupMembership,
-  GroupReference,
-  Page,
-} from "@nodepass/contracts";
+import type { MemberSummary, GroupMembership, Page } from "@nodepass/contracts";
 import { api } from "../api";
 import { useSession } from "../stores/session";
 import NModal from "./AccessibleModal.vue";
@@ -14,7 +9,7 @@ import NModal from "./AccessibleModal.vue";
 const listState = () => ({
   page: 1,
   total: 0,
-  result: null as Page<GroupMember> | null,
+  result: null as Page<MemberSummary> | null,
   busy: false,
   error: false,
   revision: 0,
@@ -22,16 +17,35 @@ const listState = () => ({
 export default defineComponent({
   components: { NModal, NButton, NDataTable, NPagination },
   props: {
-    group: { type: Object as PropType<GroupReference>, required: true },
+    target: {
+      type: Object as PropType<{
+        kind: "groups" | "profiles";
+        id: number;
+        name: string;
+      }>,
+      required: true,
+    },
   },
   emits: ["close"],
   data: () => ({
     active: true,
-    lists: { primary: listState(), additional: listState() },
+    lists: {
+      primary: listState(),
+      additional: listState(),
+      profile: listState(),
+    },
   }),
   computed: {
     title() {
-      return `${this.$t("groupMembers")}: ${this.group.name}`;
+      return `${this.$t("groupMembers")}: ${this.target.name}`;
+    },
+    targetKey() {
+      return `${this.target.kind}:${this.target.id}`;
+    },
+    listKinds(): (GroupMembership | "profile")[] {
+      return this.target.kind === "groups"
+        ? ["primary", "additional"]
+        : ["profile"];
     },
     columns() {
       return [
@@ -47,13 +61,13 @@ export default defineComponent({
     accessEpoch() {
       this.close();
     },
-    "group.id"() {
+    targetKey() {
       this.reset();
-      this.loadBoth();
+      this.loadAll();
     },
   },
   mounted() {
-    this.loadBoth();
+    this.loadAll();
   },
   beforeUnmount() {
     this.active = false;
@@ -61,7 +75,7 @@ export default defineComponent({
   },
   methods: {
     reset() {
-      for (const kind of ["primary", "additional"] as const) {
+      for (const kind of ["primary", "additional", "profile"] as const) {
         const state = this.lists[kind];
         state.revision++;
         state.result = null;
@@ -76,14 +90,13 @@ export default defineComponent({
       this.reset();
       this.$emit("close");
     },
-    loadBoth() {
-      void this.load("primary", 1);
-      void this.load("additional", 1);
+    loadAll() {
+      for (const kind of this.listKinds) void this.load(kind, 1);
     },
-    async load(kind: GroupMembership, page: number) {
+    async load(kind: GroupMembership | "profile", page: number) {
       const state = this.lists[kind];
       const revision = ++state.revision;
-      const groupId = this.group.id;
+      const targetKey = this.targetKey;
       const accessEpoch = this.accessEpoch;
       state.page = page;
       state.result = null;
@@ -91,12 +104,12 @@ export default defineComponent({
       state.error = false;
       const current = () =>
         this.active &&
-        this.group.id === groupId &&
+        this.targetKey === targetKey &&
         this.accessEpoch === accessEpoch &&
         state.revision === revision;
       try {
-        const result = await api<Page<GroupMember>>(
-          `groups/${groupId}/members?membership=${kind}&limit=25&skip=${(page - 1) * 25}`,
+        const result = await api<Page<MemberSummary>>(
+          `${this.target.kind}/${this.target.id}/members?${kind === "profile" ? "" : `membership=${kind}&`}limit=25&skip=${(page - 1) * 25}`,
         );
         if (current()) {
           state.result = result;
@@ -123,14 +136,22 @@ export default defineComponent({
     "
   >
     <section
-      v-for="kind in ['primary', 'additional'] as const"
+      v-for="kind in listKinds"
       :key="kind"
       :aria-labelledby="`members-${kind}-title`"
       :aria-busy="lists[kind].busy"
       :data-membership="kind"
     >
       <h3 :id="`members-${kind}-title`">
-        {{ $t(kind === "primary" ? "primaryMembers" : "additionalMembers") }}
+        {{
+          $t(
+            kind === "primary"
+              ? "primaryMembers"
+              : kind === "additional"
+                ? "additionalMembers"
+                : "users",
+          )
+        }}
       </h3>
       <div v-if="lists[kind].error" role="alert" class="member-error">
         <p>{{ $t("memberLoadError") }}</p>
@@ -157,7 +178,7 @@ export default defineComponent({
             :data="lists[kind].result?.data ?? []"
             :loading="lists[kind].busy"
             :bordered="false"
-            :row-key="(row: GroupMember) => row.id"
+            :row-key="(row: MemberSummary) => row.id"
             :single-line="false"
           >
             <template #empty>{{

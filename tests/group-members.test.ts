@@ -4,6 +4,7 @@ import type { Context } from "koa";
 import { harness } from "./harness.js";
 import { Catalogue } from "../packages/server/src/services/catalogue.js";
 import { groupMembers } from "../packages/server/src/services/group-members.js";
+import { profileMembers } from "../packages/server/src/services/profile-members.js";
 import { createApp } from "../packages/server/src/app.js";
 import { offlineUpdates } from "./offline-updates.js";
 
@@ -24,6 +25,8 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         },
         { id: 3, name: "Group manager", profile: 'NPJ1:{"mgmGroups":1}' },
         { id: 4, name: "Reader", profile: "NPJ1:{}" },
+        { id: 5, name: "Empty profile", profile: "NPJ1:{}" },
+        { id: 6, name: "Profile manager", profile: 'NPJ1:{"mgmProfiles":1}' },
       ]);
       await r.db("UserGroup").insert([
         { id: 2, name: "Primary" },
@@ -57,6 +60,7 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
           { ...user(12, "A account admin", 1), isAdminAcc: 1 },
           user(13, "A reader", 1),
           user(14, "A hidden group", 5000),
+          user(15, "A profile manager", 1, 6),
         ]);
       for (let start = 0; start < 1002; start += 200)
         await r.db("User").insert(
@@ -278,7 +282,101 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
     ])("rejects malformed query %s", async (query) => {
       expect((await request(`groups/2/members?${query}`, 10)).status).toBe(400);
     });
-    it("documents the new read-only endpoint and authorized group metadata", async () => {
+    it("pages profile assignments beyond 1000 users and includes disabled users without extra metadata", async () => {
+      const params = await r.params(10);
+      const first = await profileMembers(r.db, 4, params);
+      expect(first).toMatchObject({ total: 1005, limit: 25, skip: 0 });
+      expect(first.data).toHaveLength(25);
+      expect(first.data[3]).toEqual({
+        id: 100,
+        name: "Shared member",
+        login: "member0100",
+      });
+      expect(
+        await profileMembers(r.db, 4, {
+          ...params,
+          query: { skip: "1003", limit: "100" },
+        }),
+      ).toEqual({
+        total: 1005,
+        skip: 1003,
+        limit: 100,
+        data: [
+          { id: 1100, name: "Shared member", login: "member1100" },
+          { id: 1101, name: "Shared member", login: "member1101" },
+        ],
+      });
+      expect(
+        (await profileMembers(r.db, 4, { ...params, query: { skip: 2000 } }))
+          .data,
+      ).toEqual([]);
+      expect(await profileMembers(r.db, 5, params)).toEqual({
+        total: 0,
+        limit: 25,
+        skip: 0,
+        data: [],
+      });
+      await r.db("User").where({ id: 14 }).update({ userProfileId: 2 });
+      try {
+        expect((await profileMembers(r.db, 4, params)).total).toBe(1004);
+        expect(
+          (await profileMembers(r.db, 2, params)).data.map((user) => user.id),
+        ).toEqual([14, 10]);
+      } finally {
+        await r.db("User").where({ id: 14 }).update({ userProfileId: 4 });
+      }
+    });
+    it("enforces profile membership read permissions over HTTP before profile lookup", async () => {
+      expect((await request("profiles/4/members")).status).toBe(401);
+      expect((await request("profiles/4/members", 10, true)).status).toBe(403);
+      for (const actor of [11, 12, 13, 15]) {
+        expect((await request("profiles/4/members", actor)).status).toBe(403);
+        expect((await request("profiles/60000/members", actor)).status).toBe(
+          403,
+        );
+      }
+      for (const actor of [1, 10]) {
+        const response = await request(
+          "profiles/4/members?limit=1&skip=3",
+          actor,
+        );
+        expect(response).toEqual({
+          status: 200,
+          value: {
+            total: 1005,
+            limit: 1,
+            skip: 3,
+            data: [{ id: 100, name: "Shared member", login: "member0100" }],
+          },
+        });
+        expect((await request("profiles/60000/members", actor)).status).toBe(
+          404,
+        );
+      }
+      await expect(profileMembers(r.db, 4, {})).rejects.toThrow(
+        "Authentication",
+      );
+    });
+    it.each([
+      "membership=primary",
+      "unknown=1",
+      "limit=0",
+      "limit=101",
+      "limit=1.5",
+      "limit=abc",
+      "limit=1&limit=2",
+      "skip=-1",
+      "skip=1e3",
+      "skip=9007199254740992",
+    ])("rejects malformed profile membership query %s", async (query) => {
+      expect((await request(`profiles/4/members?${query}`, 10)).status).toBe(
+        400,
+      );
+    });
+    it.each(["0", "invalid"])("rejects malformed profile ID %s", async (id) => {
+      expect((await request(`profiles/${id}/members`, 10)).status).toBe(400);
+    });
+    it("documents the read-only endpoints and authorized group metadata", async () => {
       const result = await request("openapi.json", 1);
       expect(result.status).toBe(200);
       expect(
@@ -289,6 +387,14 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
       expect(
         result.value.components.schemas.UserSummary.properties,
       ).toHaveProperty("primaryGroup");
+      const profile = result.value.paths["/api/v1/profiles/{id}/members"].get;
+      expect(
+        profile.parameters.map((parameter: { name: string }) => parameter.name),
+      ).toEqual(["id", "skip", "limit"]);
+      expect(
+        profile.responses["200"].content["application/json"].schema.properties
+          .data.items,
+      ).toEqual({ $ref: "#/components/schemas/GroupMember" });
     });
   },
 );

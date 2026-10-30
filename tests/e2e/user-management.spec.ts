@@ -473,7 +473,7 @@ test("new reset permission defaults off in all locales, with accessible responsi
       .getByRole("row")
       .filter({ hasText: "Reader profile" })
       .getByRole("button")
-      .first()
+      .last()
       .click();
     const dialog = page.getByRole("dialog");
     const permission = dialog.locator(
@@ -508,8 +508,7 @@ test("explicitly grants reset permission while preserving enabled numeric sysPas
   await page
     .getByRole("row")
     .filter({ hasText: "Reader profile" })
-    .getByRole("button")
-    .first()
+    .getByRole("button", { name: "Edit", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await expect(

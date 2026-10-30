@@ -39,7 +39,9 @@ Languages: German, English, Spanish, Catalan, Hungarian, French, Polish, Russian
 
 User and group tables support ascending and descending column sorting. The user table shows primary and additional groups. Application administrators and users with `mgmUsers` can open a group's Members dialog to browse primary and additional memberships separately, including disabled users. Each list has independent pagination; redundant primary-group assignments are omitted from additional memberships. Group-management permission alone does not disclose memberships.
 
-The read-only `GET /api/v1/groups/:id/members` endpoint accepts `membership=primary|additional`, `limit` (default 25, maximum 100), and `skip` (default 0). It returns `{ total, limit, skip, data }`, with only user ID, name and login in each entry. Membership paging reaches all members, while overview sorting applies to the existing maximum of 1,000 loaded users or groups.
+The profile table also supports name sorting and a Members dialog listing the users assigned to each profile, including disabled users. The existing profile-management access rules and membership read permissions apply.
+
+The read-only `GET /api/v1/groups/:id/members` endpoint accepts `membership=primary|additional`, `limit` (default 25, maximum 100), and `skip` (default 0). `GET /api/v1/profiles/:id/members` lists profile assignments with the same pagination parameters and read permissions, without a `membership` parameter. Both return `{ total, limit, skip, data }`, with only user ID, name and login in each entry. Membership paging reaches all members, while overview sorting applies to the existing maximum of 1,000 loaded users, groups or profiles.
 
 ## Deliberate limits
 
