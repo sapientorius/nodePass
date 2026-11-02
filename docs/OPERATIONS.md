@@ -123,6 +123,16 @@ Mount inputs read-only and make them readable only by app UID 65532. Keep sensit
 - Follow [Updates and upgrades](UPGRADING.md) for the maintenance procedure, including Coolify/Dokploy image selection, backup/restore, startup migrations and post-update checks.
 - After an incomplete takeover, preserve the partial DB and restore the original backup separately before pointing sysPass at it. See [rollback](MIGRATION.md#verification-and-rollback).
 
+### Setup stops responding or reappears after import
+
+Setup is selected by the server's `/api/v1/status` response, not by browser display preferences or saved passkeys. An old session cookie can require another sign-in, and a passkey from a deleted installation needs registration in the new installation; neither changes the database's initialization flag.
+
+The browser bounds each setup HTTP exchange to 60 seconds. Import and takeover jobs can run longer while their status requests continue to respond. A response timeout ends the browser's wait only: the server job may still be active. Reload to check the installation state before submitting again, and preserve the database, data volume and deployment secrets. If legacy data has already been imported, continue takeover without uploading the dump again.
+
+Compare `/api/v1/status`, `/health/live` and `/health/ready` on the same public origin. If status reports `setupRequired: true` after a completed setup, verify that the domain routes to the intended single app process and database, and check container restarts, volume mappings and the deployment key. If even liveness does not respond, inspect the app container and ingress before retrying imports. Setup logs contain `setup.started`, `setup.progress`, `setup.completed` and `setup.failed` events correlated by a reference, without uploaded data, credentials or job tokens. Keep the last phase and reference when reporting a failure.
+
+An app process that was waiting for setup rechecks the database before reporting status or accepting setup requests. If another process initialized the database meanwhile, it returns HTTP 503 with `SETUP_STATE_CHANGED`, logs `setup.state.changed` and blocks application access instead of offering setup again. Liveness stays available and readiness reports `restart-required`. Stop duplicate app instances and restart the intended single app with the same database, volume and secrets. This guard does not add support for active replicas.
+
 ## Release and hosting checks
 
 Follow the [release procedure](RELEASES.md) for version preparation, repository rules, approval, immutable assets and digest-pinned deployment. Release candidates never advance the stable `latest` image tag.

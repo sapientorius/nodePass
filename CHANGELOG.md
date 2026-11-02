@@ -2,6 +2,22 @@
 
 Versions before 1.0 may include breaking changes in minor releases. Patch releases contain compatible fixes. Release candidates are intended for evaluation with synthetic data or a separate representative copy.
 
+## [0.1.7]
+
+### Fixed
+
+- Setup requests now time out after 60 seconds per HTTP exchange with guidance to check the installation state before retrying. Long-running import and takeover jobs continue on the server.
+- An app process waiting for setup detects when another process has initialized its database, blocks application access and requests a restart instead of offering setup again. Concurrent local setup requests are rejected while a setup operation is active.
+- Setup jobs log their start, progress and completion with a shared diagnostic reference without exposing uploaded data, credentials or job tokens.
+- TOTP sign-in explains the active method and presents recovery codes as a smaller emergency option below the main actions. Switching methods clears the input and focuses the code field; the new text is translated into all 14 supported languages.
+- Add spacing between the sysPass XML import hint and the preview button.
+
+### Upgrade notes
+
+- No database schema change is introduced. Preserve existing deployment keys, secrets, persistent volumes and backups, and run a single application process.
+- If setup reports `SETUP_STATE_CHANGED`, stop duplicate app instances and restart the intended application with the existing database, data volume and secrets. A browser timeout does not cancel a server-side setup job.
+- The cumulative security catalogue retains NP-2026-001 and NP-2026-002; this release adds no newly disclosed security corrections.
+
 ## [0.1.6]
 
 ### Fixed

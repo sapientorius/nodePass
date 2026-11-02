@@ -127,6 +127,13 @@ export async function createApp(
   let status = maintenance
     ? { installed: false, legacy: false, ready: false }
     : await migration.status();
+  let setupStateChanged = false;
+  let freshSetupActive = false;
+  const changedSetupState = () =>
+    new Unavailable(
+      "The database was initialized after this app process started. Restart this app and verify that only one app instance uses this database. Keep the database, data volume and deployment secrets.",
+      { code: "SETUP_STATE_CHANGED" },
+    );
   let updates = new Updates(
     db,
     integrations,
@@ -252,6 +259,13 @@ export async function createApp(
       if (config.production && !ctx.secure && !ctx.path.startsWith("/health/"))
         throw new Forbidden("HTTPS is required");
       if (
+        ctx.path === "/api/v1/status" ||
+        ctx.path.startsWith("/api/v1/setup/")
+      )
+        await reconcileSetupState();
+      if (setupStateChanged && application && !restoreStatus)
+        throw changedSetupState();
+      if (
         ctx.path.startsWith("/api/v1/setup/") &&
         !["GET", "HEAD"].includes(ctx.method)
       ) {
@@ -334,10 +348,16 @@ export async function createApp(
         ].includes(error.data?.code)
           ? { code: error.data.code }
           : {}),
-        ...(error instanceof Unavailable && error.data?.code === "MAINTENANCE"
-          ? { code: "MAINTENANCE" }
+        ...(error instanceof Unavailable &&
+        ["MAINTENANCE", "SETUP_STATE_CHANGED"].includes(error.data?.code)
+          ? { code: error.data.code }
           : {}),
       };
+      if (
+        error instanceof Unavailable &&
+        error.data?.code === "SETUP_STATE_CHANGED"
+      )
+        ctx.body.message = error.message;
       if (ctx.status >= 500)
         console.error(
           JSON.stringify({
@@ -422,14 +442,39 @@ export async function createApp(
   };
   const setupJobs = new Map<string, SetupJob>(),
     setupTasks = new Set<Promise<void>>();
+  const canReconcileSetup = () =>
+    !maintenance &&
+    !status.ready &&
+    !setupStateChanged &&
+    !freshSetupActive &&
+    !setupTasks.size;
+  const reconcileSetupState = async () => {
+    if (!canReconcileSetup()) return;
+    const current = await migration.status();
+    // A concurrent local setup can complete while the status query is in flight.
+    if (!canReconcileSetup()) return;
+    if (current.ready) {
+      setupStateChanged = true;
+      console.error(JSON.stringify({ event: "setup.state.changed" }));
+    } else status = current;
+  };
   const queueSetup = (kind: string, work: () => Promise<unknown>): SetupJob => {
-    if ([...setupJobs.values()].some((job) => job.state === "running"))
+    if (
+      freshSetupActive ||
+      [...setupJobs.values()].some((job) => job.state === "running")
+    )
       throw new Conflict("A setup job is already active");
     if (setupJobs.size >= 5) setupJobs.delete(setupJobs.keys().next().value!);
     const job: SetupJob = { id: token(), kind, step: kind, state: "running" };
+    const reference = randomUUID();
+    const logProgress = (event: string) =>
+      console.info(JSON.stringify({ event, reference, kind, step: job.step }));
     setupJobs.set(job.id, job);
+    logProgress("setup.started");
     migration.onProgress = (step) => {
+      if (step === job.step) return;
       job.step = step;
+      logProgress("setup.progress");
     };
     const task = (async () => {
       try {
@@ -438,11 +483,12 @@ export async function createApp(
         await startJobs();
         job.state = "complete";
         job.step = "saved";
+        logProgress("setup.completed");
       } catch (error) {
         job.state = "failed";
         job.error = {
           ...setupFailure(error),
-          reference: randomUUID(),
+          reference,
           step: job.step,
         };
         console.error(
@@ -486,13 +532,18 @@ export async function createApp(
       ctx.body = { status: "database-unavailable" };
       return;
     }
-    ctx.status = !maintenance && status.ready && vault.unlocked ? 200 : 503;
+    ctx.status =
+      !maintenance && !setupStateChanged && status.ready && vault.unlocked
+        ? 200
+        : 503;
     ctx.body = {
       status: maintenance
         ? "maintenance"
-        : ctx.status === 200
-          ? "ready"
-          : "setup-required",
+        : setupStateChanged
+          ? "restart-required"
+          : ctx.status === 200
+            ? "ready"
+            : "setup-required",
     };
   });
   router.get("/api/v1/status", async (ctx) => {
@@ -528,15 +579,22 @@ export async function createApp(
     await setup(ctx);
     const data = body(ctx);
     exact(data, ["login", "name", "password"]);
-    await migration.fresh({
-      login: text(data, "login", 50),
-      name: text(data, "name", 80),
-      password: text(data, "password"),
-      token: ctx.get("x-setup-token"),
-    });
-    status = await migration.status();
-    await startJobs();
-    ctx.body = { ready: status.ready };
+    if (freshSetupActive || setupTasks.size)
+      throw new Conflict("A setup job is already active");
+    freshSetupActive = true;
+    try {
+      await migration.fresh({
+        login: text(data, "login", 50),
+        name: text(data, "name", 80),
+        password: text(data, "password"),
+        token: ctx.get("x-setup-token"),
+      });
+      status = await migration.status();
+      await startJobs();
+      ctx.body = { ready: status.ready };
+    } finally {
+      freshSetupActive = false;
+    }
   });
   router.post("/api/v1/setup/migrate", async (ctx) => {
     await setup(ctx);

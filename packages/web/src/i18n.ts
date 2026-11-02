@@ -21,6 +21,7 @@ import { userGroupMessages } from "./user-group-translations";
 import { accountAccessMessages } from "./account-access-translations";
 import { userManagementMessages } from "./user-management-translations";
 import { backupMessages } from "./backup-translations";
+import { mfaMessages } from "./mfa-translations";
 export const languageOptions = [
   { label: "Deutsch", value: "de_DE" },
   { label: "English", value: "en_US" },
@@ -117,6 +118,7 @@ export const messages = Object.fromEntries(
         ...sessionMessages[locale],
         ...eventMessages[locale],
         ...transferMessages[locale],
+        ...mfaMessages[locale],
         backToLogin: backToLoginLabels[locale as Language],
       },
     ];

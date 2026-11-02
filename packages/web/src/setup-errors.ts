@@ -16,6 +16,10 @@ const germanAdminReasons: Record<string, string> = {
 };
 
 const german: Record<string, string> = {
+  SETUP_STATE_CHANGED:
+    "Die Datenbank wurde nach dem Start dieses App-Prozesses eingerichtet. Starte die App neu und prüfe, dass nur eine App-Instanz diese Datenbank verwendet. Datenbank, Datenvolume und Deployment-Secrets beibehalten.",
+  SETUP_RESPONSE_TIMEOUT:
+    "Der Server hat innerhalb von 60 Sekunden keine Einrichtungsantwort geliefert. Der Import kann auf dem Server noch laufen. Lade die Seite neu, um vor einem erneuten Versuch den Installationszustand zu prüfen. Datenbank und Datenvolume beibehalten.",
   SETUP_ADMIN_REQUIRED:
     "Die bisherigen sysPass-Admin-Zugangsdaten konnten nicht bestätigt werden. Verwende den bestehenden Benutzernamen und das bisherige Login-Passwort eines aktiven lokalen sysPass-Anwendungsadministrators. Die Benutzer werden übernommen; neue nodePass-Zugangsdaten berechtigen nicht zur Übernahme.",
   DUMP_SYNTAX:

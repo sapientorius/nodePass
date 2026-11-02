@@ -833,6 +833,23 @@ footer span {
 .auth-card .n-tabs {
   margin-bottom: 22px;
 }
+.auth-recovery-option {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.auth-recovery-option .n-button {
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  line-height: 1.7;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.auth-recovery-option .n-button__content {
+  white-space: normal;
+}
 .auth-divider {
   height: 53px;
   display: flex;
