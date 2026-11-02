@@ -208,9 +208,11 @@ export default defineComponent({
               :disabled="busy"
               type="password"
               autocomplete="off" /></n-form-item
-          ><n-alert v-if="format === 'syspass' && !preview" type="info">{{
-            $t("importPasswordHelp")
-          }}</n-alert
+          ><n-alert
+            v-if="format === 'syspass' && !preview"
+            type="info"
+            style="margin-bottom: 16px"
+            >{{ $t("importPasswordHelp") }}</n-alert
           ><template v-if="preview"
             ><n-alert type="info" :title="$t('preview')"
               >{{ preview.count }} · {{ $t("accounts") }}</n-alert

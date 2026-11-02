@@ -278,6 +278,14 @@ export default defineComponent({
         this.enrollment = await api("auth/totp/start", "POST", {});
       });
     },
+    async switchVerificationMethod() {
+      if (this.busy) return;
+      this.recoveryMode = !this.recoveryMode;
+      this.code = "";
+      this.sessionStore.error = "";
+      await this.$nextTick();
+      (this.$refs.verificationInput as InputInst | undefined)?.focus();
+    },
     async finishTotp() {
       await this.run(async () => {
         this.sessionStore.accept(
@@ -441,12 +449,18 @@ export default defineComponent({
         <h1>
           {{ isSetup ? $t("setup") : pending ? $t("mfa") : $t("welcome") }}
         </h1>
-        <p class="muted auth-description">
+        <p id="auth-description" class="muted auth-description">
           {{
             isSetup
               ? $t("setupHelp")
               : pending
-                ? $t(pending === "enroll" ? "enroll" : "confirm")
+                ? $t(
+                    pending === "enroll"
+                      ? "enroll"
+                      : recoveryMode
+                        ? "mfaRecoveryHelp"
+                        : "mfaTotpHelp",
+                  )
                 : $t("loginHelp")
           }}
         </p>
@@ -656,23 +670,17 @@ export default defineComponent({
           ><n-form
             v-if="pending === 'verify' || enrollment"
             @submit.prevent="finishTotp"
-            ><n-button
-              v-if="pending === 'verify'"
-              quaternary
-              style="margin-bottom: 12px"
-              @click="
-                recoveryMode = !recoveryMode;
-                code = '';
-              "
-              >{{ $t(recoveryMode ? "totp" : "recoveryCodes") }}</n-button
             ><n-form-item :label="$t(recoveryMode ? 'recoveryCodes' : 'code')"
               ><n-input
+                ref="verificationInput"
                 v-model:value="code"
+                :disabled="busy"
                 :maxlength="recoveryMode ? 100 : 6"
                 autocomplete="one-time-code"
                 :input-props="{
                   inputmode: recoveryMode ? 'text' : 'numeric',
                   'aria-label': $t(recoveryMode ? 'recoveryCodes' : 'code'),
+                  'aria-describedby': 'auth-description',
                 }" /></n-form-item
             ><n-button
               type="primary"
@@ -691,7 +699,19 @@ export default defineComponent({
             :loading="busy"
             @click="backToLogin"
             >{{ $t("backToLogin") }}</n-button
-          ></template
+          >
+          <div v-if="pending === 'verify'" class="auth-recovery-option">
+            <n-button
+              text
+              size="small"
+              attr-type="button"
+              :disabled="busy"
+              @click="switchVerificationMethod"
+              >{{
+                $t(recoveryMode ? "useAuthenticatorCode" : "useRecoveryCode")
+              }}</n-button
+            >
+          </div></template
         >
         <template v-else
           ><n-form @submit.prevent="signIn"

@@ -352,7 +352,10 @@ test("fresh setup, MFA, accounts, themes, responsive layout and passwordless pas
   await page.getByLabel("Passwort", { exact: true }).fill(secrets.password);
   await page.getByRole("button", { name: "Anmelden", exact: true }).click();
   await page
-    .getByRole("button", { name: "Wiederherstellungscodes", exact: true })
+    .getByRole("button", {
+      name: "Im Notfall: Wiederherstellungscode verwenden",
+      exact: true,
+    })
     .click();
   await page
     .getByRole("textbox", { name: "Wiederherstellungscodes", exact: true })
