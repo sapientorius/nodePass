@@ -12,6 +12,7 @@ import { database, type Row } from "../packages/server/src/db.js";
 import { isolatedDatabase } from "./database.js";
 import { legacyReference, seedLegacy } from "./legacy.js";
 import { serializePhp } from "./serialization.js";
+import * as OTPAuth from "otpauth";
 const legacyManagementProfile = serializePhp({
   accView: true,
   accViewPass: true,
@@ -25,14 +26,19 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     drop: () => Promise<void>,
     directory: string,
     setupToken: string,
-    dump: string;
+    dump: string,
+    config: ReturnType<typeof loadConfig>;
+  let staleRuntime: typeof runtime | undefined,
+    staleServer: typeof server | undefined,
+    staleBase: string;
   const call = async (
     path: string,
     data?: unknown,
     token = setupToken,
     headers: Record<string, string> = {},
+    target = base,
   ) => {
-    const response = await fetch(base + "/api/v1/" + path, {
+    const response = await fetch(target + "/api/v1/" + path, {
       method: data === undefined ? "GET" : "POST",
       headers: {
         origin: "https://vault.example.test",
@@ -109,20 +115,19 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     drop = isolated.drop;
     directory = await mkdtemp(join(tmpdir(), "nodepass-http-"));
     setupToken = isolated.config.setupToken;
-    runtime = await createApp(
-      {
-        ...isolated.config,
-        dataDir: directory,
-        production: true,
-        publicUrl: "https://vault.example.test",
-        rpId: "vault.example.test",
-        trustProxy: true,
-        trustedProxies: ["coolify-proxy"],
-        legacy: { passwordSalt: legacyReference.publicLink.salt },
-      },
-      undefined,
-      { updateFetch: offlineUpdates },
-    );
+    config = {
+      ...isolated.config,
+      dataDir: directory,
+      production: true,
+      publicUrl: "https://vault.example.test",
+      rpId: "vault.example.test",
+      trustProxy: true,
+      trustedProxies: ["coolify-proxy"],
+      legacy: { passwordSalt: legacyReference.publicLink.salt },
+    };
+    runtime = await createApp(config, undefined, {
+      updateFetch: offlineUpdates,
+    });
     server = await runtime.app.listen(0, "127.0.0.1");
     if (!server.listening) await once(server, "listening");
     const address = server.address();
@@ -137,6 +142,11 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
         server.close((e) => (e ? reject(e) : resolve())),
       );
     if (runtime) await runtime.close();
+    if (staleServer?.listening)
+      await new Promise<void>((resolve, reject) =>
+        staleServer!.close((error) => (error ? reject(error) : resolve())),
+      );
+    if (staleRuntime) await staleRuntime.close();
     if (drop) await drop();
     if (directory) await rm(directory, { recursive: true, force: true });
   });
@@ -163,6 +173,7 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
   });
   it("requires HTTPS and the setup token, restricts concurrency and sanitizes unexpected failures", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const progress = vi.spyOn(console, "info").mockImplementation(() => {});
     const insecure = await fetch(base + "/api/v1/status");
     expect(insecure.status).toBe(403);
     expect((await fetch(base + "/health/live")).status).toBe(200);
@@ -186,9 +197,19 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     const queued = await call("setup/import", { dump: "placeholder" });
     expect(queued.response.status).toBe(202);
     expect((await call("setup/import", { dump })).response.status).toBe(409);
+    expect(
+      (
+        await call("setup/fresh", {
+          login: "admin",
+          name: "Synthetic",
+          password: "telescope saffron synthetic 915!",
+        })
+      ).response.status,
+    ).toBe(409);
     expect((await call("setup/jobs/" + queued.value.job)).value.state).toBe(
       "running",
     );
+    runtime.migration.onProgress?.("decode");
     release();
     const failed = await wait(queued.value.job);
     expect(failed.state).toBe("failed");
@@ -197,6 +218,31 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     expect(failed.error.reference).toMatch(/^[a-f0-9-]{36}$/);
     expect(log).toHaveBeenCalledWith(
       expect.stringContaining(failed.error.reference),
+    );
+    expect(progress).toHaveBeenCalledWith(
+      expect.stringContaining(failed.error.reference),
+    );
+    const events = progress.mock.calls.map(([entry]) =>
+      JSON.parse(String(entry)),
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "setup.started",
+          kind: "import",
+          reference: failed.error.reference,
+        }),
+        expect.objectContaining({
+          event: "setup.progress",
+          step: "decode",
+          reference: failed.error.reference,
+        }),
+      ]),
+    );
+    expect(JSON.stringify(events)).not.toMatch(
+      new RegExp(
+        `${queued.value.job}|${setupToken}|secret database detail|placeholder`,
+      ),
     );
     expect(JSON.stringify(log.mock.calls)).not.toContain(
       "secret database detail",
@@ -215,6 +261,7 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     );
     expect((await call("setup/jobs/" + first)).response.status).toBe(200);
     log.mockRestore();
+    progress.mockRestore();
   });
   it("explains parser and configuration errors, logs references, and validates config before changing the target", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -298,6 +345,15 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     }
   });
   it("imports real legacy rows, checks identities and retains final status after closing setup", async () => {
+    staleRuntime = await createApp(config, undefined, {
+      updateFetch: offlineUpdates,
+    });
+    staleServer = await staleRuntime.app.listen(0, "127.0.0.1");
+    if (!staleServer.listening) await once(staleServer, "listening");
+    const staleAddress = staleServer.address();
+    if (!staleAddress || typeof staleAddress === "string")
+      throw new Error("Missing stale listener");
+    staleBase = `http://127.0.0.1:${staleAddress.port}`;
     const configuration = `<config><appVersion>310.19081801</appVersion><databaseVersion>unknown</databaseVersion><passwordSalt>${legacyReference.publicLink.salt}</passwordSalt></config>`;
     const imported = await call("setup/import", { dump, configuration });
     expect(imported.response.status).toBe(202);
@@ -381,5 +437,111 @@ describe.skipIf(!enabled)("authenticated asynchronous setup over HTTP", () => {
     expect(signedIn.response.headers.get("set-cookie")).toMatch(/; httponly/i);
     expect(signedIn.value.phase).toBe("verify");
     expect(JSON.stringify(finished)).not.toContain(payload.password);
+    const cookie = signedIn.response.headers.get("set-cookie")!.split(";")[0]!,
+      factor = await runtime
+        .db("nodepass_factors")
+        .where({ userId: 1, kind: "totp" })
+        .first(),
+      otp = new OTPAuth.TOTP({
+        secret: runtime.vault
+          .unwrap(Buffer.from(factor.data, "base64"), "totp/1")
+          .toString(),
+      });
+    const verified = await call(
+      "auth/totp/verify",
+      { code: otp.generate() },
+      setupToken,
+      {
+        cookie,
+        "x-csrf-token": signedIn.value.csrf,
+      },
+    );
+    expect(verified.value.phase).toBe("ready");
+    const readyCookie = verified.response.headers
+      .get("set-cookie")!
+      .split(";")[0]!;
+    const accountsBefore = await call("accounts", undefined, setupToken, {
+      cookie: readyCookie,
+    });
+    expect(
+      accountsBefore.response.status,
+      JSON.stringify(accountsBefore.value),
+    ).toBe(200);
+    expect(accountsBefore.value.total).toBeGreaterThan(0);
+
+    // This process started before import and must not offer setup from its old snapshot.
+    expect((await staleRuntime.migration.status()).ready).toBe(true);
+    const staleStatus = await call(
+      "status",
+      undefined,
+      setupToken,
+      {},
+      staleBase,
+    );
+    expect(staleStatus.response.status).toBe(503);
+    expect(staleStatus.value).toMatchObject({ code: "SETUP_STATE_CHANGED" });
+    expect(staleStatus.value.message).toContain("Restart this app");
+    expect(staleStatus.value).not.toHaveProperty("setupRequired", true);
+    for (const path of ["setup/import", "setup/fresh", "setup/migrate"])
+      expect(
+        (await call(path, {}, setupToken, {}, staleBase)).response.status,
+      ).toBe(503);
+    expect(
+      (
+        await call(
+          "accounts",
+          undefined,
+          setupToken,
+          { cookie: readyCookie },
+          staleBase,
+        )
+      ).response.status,
+    ).toBe(503);
+    expect((await fetch(staleBase + "/health/live")).status).toBe(200);
+    const staleReady = await fetch(staleBase + "/health/ready");
+    expect(staleReady.status).toBe(503);
+    expect(await staleReady.json()).toEqual({ status: "restart-required" });
+    expect((await call("status")).value.setupRequired).toBe(false);
+    await new Promise<void>((resolve, reject) =>
+      staleServer!.close((error) => (error ? reject(error) : resolve())),
+    );
+    await staleRuntime.close();
+    staleServer = undefined;
+    staleRuntime = undefined;
+
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await runtime.close();
+    runtime = await createApp(config, undefined, {
+      updateFetch: offlineUpdates,
+    });
+    server = await runtime.app.listen(0, "127.0.0.1");
+    if (!server.listening) await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Missing listener");
+    base = `http://127.0.0.1:${address.port}`;
+    expect((await call("status")).value.setupRequired).toBe(false);
+    expect(
+      (
+        await call("auth/session", undefined, setupToken, {
+          cookie: readyCookie,
+        })
+      ).value.phase,
+    ).toBe("ready");
+    expect(
+      (await call("accounts", undefined, setupToken, { cookie: readyCookie }))
+        .value.total,
+    ).toBeGreaterThan(0);
+    expect(
+      (
+        await call("auth/session", undefined, setupToken, {
+          cookie: `nodepass=${"a".repeat(43)}`,
+        })
+      ).response.status,
+    ).toBe(401);
+    expect((await call("status")).value.setupRequired).toBe(false);
+    expect((await call("setup/import", { dump })).response.status).toBe(403);
   }, 60000);
 });

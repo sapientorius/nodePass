@@ -35,6 +35,7 @@ async function request(
   method = "GET",
   data?: unknown,
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<Response> {
   const revision = actionRevision();
   const session = sessionRevision;
@@ -46,6 +47,7 @@ async function request(
     fetch(`/api/v1/${path}`, {
       method,
       credentials: "same-origin",
+      signal,
       headers: {
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
         ...(csrf ? { "x-csrf-token": csrf } : {}),
@@ -68,6 +70,11 @@ async function request(
       if (typeof result.message === "string") failure = result;
     } catch {
       /* Do not expose server error bodies. */
+    }
+    if (response.status === 503 && failure.code === "SETUP_STATE_CHANGED") {
+      window.dispatchEvent(new Event("nodepass-restart-required"));
+      // Blocking the workspace cancels pending actions; preserve this diagnostic.
+      throw new ApiError(failure, response.status);
     }
     if (response.status === 503 && failure.code === "MAINTENANCE")
       window.dispatchEvent(new Event("nodepass-maintenance"));
@@ -95,10 +102,11 @@ export async function api<T = any>(
   method = "GET",
   data?: unknown,
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
   const revision = sessionRevision;
   const context = actionRevision();
-  const response = await request(path, method, data, headers);
+  const response = await request(path, method, data, headers, signal);
   const result =
     response.status === 204 ? (undefined as T) : ((await response.json()) as T);
   assertAction(context);

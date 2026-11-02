@@ -19,6 +19,7 @@ import {
 } from "@simplewebauthn/browser";
 import { api, ApiError, type ApiFailure } from "../api";
 import { setupErrorMessage, setupErrorContext } from "../setup-errors";
+import { setupRequest } from "../setup-request";
 import { useSession } from "../stores/session";
 import { languageOptions } from "../i18n";
 import Icon from "../components/Icon.vue";
@@ -193,9 +194,9 @@ export default defineComponent({
       data: unknown,
       headers: Record<string, string>,
     ) {
-      const queued = await api(path, "POST", data, headers);
+      const queued = await setupRequest(path, "POST", data, headers);
       while (!this.closed) {
-        const job = await api(
+        const job = await setupRequest(
           `setup/jobs/${queued.job}`,
           "GET",
           undefined,
@@ -302,7 +303,7 @@ export default defineComponent({
       await this.run(async () => {
         const headers = { "x-setup-token": this.setupToken };
         if (this.mode === "fresh")
-          await api(
+          await setupRequest(
             "setup/fresh",
             "POST",
             { login: this.login, name: this.name, password: this.password },
@@ -323,7 +324,7 @@ export default defineComponent({
             this.dump = "";
             this.sessionStore.legacy = true;
           }
-          await api(
+          await setupRequest(
             "setup/preflight",
             "POST",
             {

@@ -28,6 +28,7 @@ import { cancelConfirmation } from "./confirmation";
 import { uiLocales, dateLocales } from "./ui-locale";
 import type { Language, UpdateStatus } from "@nodepass/contracts";
 import { api } from "./api";
+import { setupErrorMessage } from "./setup-errors";
 import { canManage, managementNavigation } from "./navigation";
 export default defineComponent({
   components: {
@@ -61,6 +62,16 @@ export default defineComponent({
     poller: undefined as ReturnType<typeof setInterval> | undefined,
   }),
   computed: {
+    setupRestartMessage() {
+      return setupErrorMessage(
+        {
+          code: "SETUP_STATE_CHANGED",
+          message:
+            "The database was initialized after this app process started. Restart this app and verify that only one app instance uses this database. Keep the database, data volume and deployment secrets.",
+        },
+        String(this.$i18n.locale),
+      );
+    },
     componentLocale() {
       return uiLocales[this.$i18n.locale as Language];
     },
@@ -172,6 +183,7 @@ export default defineComponent({
     window.addEventListener("nodepass-expired", this.expired);
     window.addEventListener("nodepass-refresh", this.refreshSession);
     window.addEventListener("nodepass-maintenance", this.enterMaintenance);
+    window.addEventListener("nodepass-restart-required", this.requireRestart);
     window.addEventListener("focus", this.activated);
     document.addEventListener("visibilitychange", this.activated);
     await this.sessionStore.load();
@@ -187,10 +199,18 @@ export default defineComponent({
     window.removeEventListener("nodepass-expired", this.expired);
     window.removeEventListener("nodepass-refresh", this.refreshSession);
     window.removeEventListener("nodepass-maintenance", this.enterMaintenance);
+    window.removeEventListener(
+      "nodepass-restart-required",
+      this.requireRestart,
+    );
     window.removeEventListener("focus", this.activated);
     document.removeEventListener("visibilitychange", this.activated);
   },
   methods: {
+    requireRestart() {
+      this.sessionStore.restartRequired = true;
+      this.sessionStore.clear();
+    },
     enterMaintenance() {
       this.sessionStore.maintenance = true;
       cancelConfirmation();
@@ -291,7 +311,7 @@ export default defineComponent({
           class="app-root"
           :class="{ 'is-dark': sessionStore.theme === 'dark' }"
         >
-          <BackupProgress />
+          <BackupProgress v-if="!sessionStore.restartRequired" />
           <ConfirmationModal
             v-if="
               sessionStore.viewer?.phase === 'ready' &&
@@ -305,12 +325,23 @@ export default defineComponent({
             />
           </div>
           <template v-else>
-            <div v-if="sessionStore.error" class="global-error">
-              <n-alert type="error" closable @close="sessionStore.error = ''">{{
-                sessionStore.error
-              }}</n-alert>
+            <div
+              v-if="sessionStore.error || sessionStore.restartRequired"
+              class="global-error"
+            >
+              <n-alert
+                type="error"
+                :closable="!sessionStore.restartRequired"
+                @close="sessionStore.error = ''"
+                >{{
+                  sessionStore.restartRequired
+                    ? setupRestartMessage
+                    : sessionStore.error
+                }}</n-alert
+              >
             </div>
-            <template v-if="sessionStore.maintenance"></template>
+            <template v-if="sessionStore.restartRequired"></template>
+            <template v-else-if="sessionStore.maintenance"></template>
             <template v-else-if="publicRoute"><router-view /></template>
             <template
               v-else-if="

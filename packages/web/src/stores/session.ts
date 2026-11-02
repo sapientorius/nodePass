@@ -13,6 +13,7 @@ export const useSession = defineStore("session", {
     viewer: null as (Viewer & { phase: string }) | null,
     setupRequired: false,
     maintenance: false,
+    restartRequired: false,
     legacy: false,
     sso: false,
     version: "",
