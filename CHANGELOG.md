@@ -14,11 +14,15 @@ Versions before 1.0 may include breaking changes in minor releases. Patch releas
 - MFA sign-in shows only available verification methods, including retained passkeys, and explains required enrollment after an administrator reset. Session changes clear pending codes and enrollment data. Reset controls and guidance are translated into all 14 supported languages.
 - Per-user authentication transactions and revision checks prevent in-flight sign-in, enrollment or factor changes from recreating removed factors or sessions after a reset. Passkey counter updates recheck the current credential under a database lock.
 
+### Security
+
+- Updated the digest-pinned Node.js 24 distroless runtime to include Debian's corrected `zlib1g` package for CVE-2026-76844 and CVE-2026-85091. Earlier published nodePass images used the affected base image. These runtime corrections are recorded in the cumulative security catalogue so affected installations receive a critical update notice.
+
 ### Upgrade notes
 
 - No database schema change is introduced. Reset state uses the existing nodePass settings table. Preserve deployment keys, secrets, persistent volumes and historical backup keys, and update using the release's verified image digest.
 - Existing passkeys remain valid after an authenticator reset. Users can generate new recovery codes in their personal security settings after enrollment. Disabled users remain disabled; recovery for an inaccessible sole application administrator continues to use the documented offline procedure.
-- The cumulative security catalogue retains NP-2026-001 and NP-2026-002; this release adds no newly disclosed security corrections.
+- The cumulative security catalogue retains NP-2026-001 and NP-2026-002 and adds the two runtime zlib corrections fixed in 0.1.8.
 
 ## [0.1.7]
 
