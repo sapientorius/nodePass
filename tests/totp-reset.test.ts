@@ -474,9 +474,9 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
       await r.db.transaction(async (trx) => {
         await lockUserManagement(trx);
         await trx("User").where({ id: 1 }).update({ isAdminApp: 0 });
-        denied = expect(resetTotp(r.db, r.auth, target, params)).rejects.toThrow(
-          "Application administrator required",
-        );
+        denied = expect(
+          resetTotp(r.db, r.auth, target, params),
+        ).rejects.toThrow("Application administrator required");
       });
       await denied;
       expect((await authState(r.db, target)).revision).toBe(0);
