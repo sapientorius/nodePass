@@ -2,6 +2,7 @@ import { Forbidden, NotAuthenticated } from "@feathersjs/errors";
 import type { UserManagement } from "@nodepass/contracts";
 import type { Database, Row } from "../db.js";
 import { Auth } from "../security/auth.js";
+import { authState } from "../security/auth-state.js";
 import type { Principal } from "../security/policy.js";
 import { identity, type ServiceParams } from "./accounts.js";
 
@@ -33,6 +34,7 @@ export function userManagement(
               : undefined;
   return {
     canEdit: reason === undefined,
+    canResetTotp: !!user.isAdminApp && user.id !== target.id,
     canResetPassword:
       reason === undefined &&
       (!!user.isAdminApp || enabled(user.profile.mgmUsersResetPassword)),
@@ -86,6 +88,7 @@ export async function managementParams(
   if (
     !Number(session.verifiedAt) &&
     (factor ||
+      (await authState(db, user.id)).enrollmentRequired ||
       policy.mfa === "everyone" ||
       (policy.mfa === "admins" && (user.isAdminApp || user.isAdminAcc)))
   )

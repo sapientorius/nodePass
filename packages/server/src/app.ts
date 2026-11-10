@@ -27,6 +27,7 @@ import {
 } from "./security/auth.js";
 import { Accounts, integer, type ServiceParams } from "./services/accounts.js";
 import { Catalogue } from "./services/catalogue.js";
+import { resetTotp } from "./services/totp-reset.js";
 import { groupMembers } from "./services/group-members.js";
 import { profileMembers } from "./services/profile-members.js";
 import { Resources } from "./services/resources.js";
@@ -759,30 +760,13 @@ export async function createApp(
       .select("id", "kind", "name");
   });
   router.delete("/api/v1/auth/factors/:id", async (ctx) => {
-    const id = (await params(ctx)).identity!;
-    auth.requireRecent(id);
-    const factorId = integer(ctx.params.id);
-    await db.transaction(async (trx) => {
-      const factors = await trx("nodepass_factors")
-        .where({ userId: id.user.id, confirmed: 1 })
-        .whereNot("kind", "recovery")
-        .forUpdate();
-      if (!factors.some((f) => f.id === factorId))
-        throw new BadRequest("Unknown factor");
-      const policy = await auth.policy();
-      if (
-        factors.length <= 1 &&
-        (policy.mfa === "everyone" ||
-          (policy.mfa === "admins" &&
-            (id.user.isAdminApp || id.user.isAdminAcc)))
-      )
-        throw new Forbidden("Enroll a replacement factor first");
-      await trx("nodepass_factors")
-        .where({ id: factorId, userId: id.user.id })
-        .delete();
-      await trx("nodepass_sessions").where({ userId: id.user.id }).delete();
-      await audit(trx, id.user.id, "auth.factor.remove", factorId);
-    });
+    requireReady();
+    await auth.removeFactor(ctx, integer(ctx.params.id));
+  });
+  router.post("/api/v1/users/:id/totp-reset", async (ctx) => {
+    const actor = await params(ctx);
+    exact(body(ctx), []);
+    await resetTotp(db, auth, integer(ctx.params.id), actor);
     ctx.status = 204;
   });
   router.post("/api/v1/auth/password", async (ctx) => {

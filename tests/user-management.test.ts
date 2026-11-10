@@ -118,6 +118,7 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         expect((await users.get(readerId, manager)).management).toEqual({
           canEdit: true,
           canResetPassword: false,
+          canResetTotp: false,
         });
         await users.patch(readerId, readerData(), manager);
         const before = await r.db("User").where({ id: readerId }).first();
@@ -210,6 +211,7 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         expect((await users.get(readerId, manager)).management).toEqual({
           canEdit: false,
           canResetPassword: false,
+          canResetTotp: false,
           reason,
         });
         await expect(

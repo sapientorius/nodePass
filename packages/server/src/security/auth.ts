@@ -26,7 +26,9 @@ import {
   type SecurityPolicy,
   type Viewer,
   type ConfirmationMethods,
+  type MfaMethod,
 } from "@nodepass/contracts";
+import { authState, lockAuthState, saveAuthState } from "./auth-state.js";
 import { audit, getSetting, type Database, type Row } from "../db.js";
 import type { Config } from "../config.js";
 import { mapData } from "../compat/data.js";
@@ -81,11 +83,42 @@ export class Auth {
     readonly db: Database,
     readonly config: Config,
     readonly vault: Vault,
+    private readonly lockedUser?: number,
   ) {
     this.trustedPeer = proxyPeerMatcher(config.trustedProxies);
   }
   async policy(): Promise<SecurityPolicy> {
     return getSetting(this.db, "security", defaultPolicy);
+  }
+  private async withUser<T>(
+    userId: number,
+    revision: number,
+    run: (auth: Auth) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction(async (trx) => {
+      const state = await lockAuthState(trx, userId);
+      if (state.revision !== revision)
+        throw new NotAuthenticated("Authentication changed; sign in again");
+      return run(new Auth(trx, this.config, this.vault, userId));
+    });
+  }
+  private async withIdentity<T>(
+    ctx: Context,
+    pending: boolean,
+    run: (auth: Auth, id: RequestIdentity) => Promise<T>,
+  ): Promise<T> {
+    const initial = await this.identity(ctx, pending);
+    const { revision } = await authState(this.db, initial.user.id);
+    return this.withUser(initial.user.id, revision, async (auth) => {
+      // Keep concurrent session revocation ordered before or after this operation.
+      const session = await auth
+        .db("nodepass_sessions")
+        .where({ id: initial.session.id, userId: initial.user.id })
+        .forUpdate()
+        .first();
+      if (!session) throw new NotAuthenticated("Session expired");
+      return run(auth, await auth.identity(ctx, pending));
+    });
   }
   async user(id: number): Promise<User> {
     const row = await this.db("User").where({ id }).first();
@@ -237,9 +270,10 @@ export class Auth {
     const value = ctx.cookies.get("nodepass");
     if (!value || value.length > 100)
       throw new NotAuthenticated("Authentication required");
-    const session = (await this.db("nodepass_sessions")
-      .where({ id: digest(value) })
-      .first()) as Session | undefined;
+    const query = this.db("nodepass_sessions").where({ id: digest(value) });
+    const session = (await (
+      this.lockedUser === undefined ? query : query.forUpdate()
+    ).first()) as Session | undefined;
     const policy = await this.policy(),
       now = Date.now();
     if (
@@ -266,6 +300,7 @@ export class Auth {
       .count({ n: "id" })
       .first();
     const required =
+      (await authState(this.db, user.id)).enrollmentRequired ||
       policy.mfa === "everyone" ||
       (policy.mfa === "admins" && isAdmin(user)) ||
       Number(factors?.n) > 0;
@@ -300,7 +335,8 @@ export class Auth {
     );
     const factors = await this.db("nodepass_factors")
       .where({ userId: user.id, confirmed: 1 })
-      .select("id");
+      .select("id", "kind");
+    const state = await authState(this.db, user.id);
     return {
       // A UI invalidation hint only; authorization always uses current DB state.
       accessRevision: createHash("sha256")
@@ -329,6 +365,10 @@ export class Auth {
       ...(user.view ? { view: user.view } : {}),
       language: user.language,
       needsMfa: !session.complete,
+      mfaMethods: (["totp", "recovery", "passkey"] as MfaMethod[]).filter(
+        (kind) => factors.some((factor) => factor.kind === kind),
+      ),
+      mfaResetPending: state.enrollmentRequired,
       phase: session.complete ? "ready" : factors.length ? "verify" : "enroll",
       csrf: session.csrf,
       permissions,
@@ -338,12 +378,22 @@ export class Auth {
     ctx: Context,
     user: User,
     verified = false,
+    expectedRevision?: number,
   ): Promise<RequestIdentity> {
+    if (this.lockedUser !== user.id) {
+      const revision =
+        expectedRevision ?? (await authState(this.db, user.id)).revision;
+      return this.withUser(user.id, revision, (auth) =>
+        auth.issue(ctx, user, verified, revision),
+      );
+    }
+    user = await this.user(user.id);
     const policy = await this.policy();
     const factors = await this.db("nodepass_factors")
       .where({ userId: user.id, confirmed: 1 })
       .select("id");
     const required =
+      (await authState(this.db, user.id)).enrollmentRequired ||
       policy.mfa === "everyone" ||
       (policy.mfa === "admins" && isAdmin(user)) ||
       factors.length > 0;
@@ -405,6 +455,7 @@ export class Auth {
         );
       }
     }
+    const revision = row ? (await authState(this.db, row.id)).revision : 0;
     const valid =
       row && !row.isDisabled && !row.isLdap
         ? await verifyPassword(password, Buffer.from(row.pass).toString())
@@ -427,7 +478,7 @@ export class Auth {
       await this.db("User")
         .where({ id: user.id })
         .update({ pass: await hashPassword(password) });
-    ctx.body = await this.viewer(await this.issue(ctx, user));
+    ctx.body = await this.viewer(await this.issue(ctx, user, false, revision));
   }
   private async provision(
     login: string,
@@ -525,10 +576,11 @@ export class Auth {
     )
       throw new NotAuthenticated("SSO identity is not mapped");
     const user = await this.user(row.id);
+    const revision = (await authState(this.db, user.id)).revision;
     if (user.isLdap && !(await this.directory(user)))
       throw new NotAuthenticated("Directory access denied");
     // An upstream assertion is never considered a nodePass second factor.
-    ctx.body = await this.viewer(await this.issue(ctx, user));
+    ctx.body = await this.viewer(await this.issue(ctx, user, false, revision));
   }
   async challenge(
     userId: number | null,
@@ -536,6 +588,28 @@ export class Auth {
     kind: string,
     value: unknown,
   ): Promise<string> {
+    if (userId !== null && this.lockedUser !== userId) {
+      const { revision } = await authState(this.db, userId);
+      return this.withUser(userId, revision, async (auth) => {
+        if (sessionId !== null) {
+          const session = await auth
+            .db("nodepass_sessions")
+            .where({ id: sessionId, userId })
+            .forUpdate()
+            .first();
+          const policy = await auth.policy();
+          if (
+            !session ||
+            Date.now() - Number(session.lastSeen) >
+              policy.sessionIdleSeconds * 1000 ||
+            Date.now() - Number(session.createdAt) >
+              policy.sessionAbsoluteSeconds * 1000
+          )
+            throw new NotAuthenticated("Session expired");
+        }
+        return auth.challenge(userId, sessionId, kind, value);
+      });
+    }
     const raw = token(),
       id = digest(raw);
     await this.db("nodepass_challenges").insert({
@@ -609,7 +683,12 @@ export class Auth {
   async confirmationOptions(ctx: Context): Promise<void> {
     const id = await this.identity(ctx);
     exact(body(ctx), []);
-    await this.limit("passkey/ip", ctx.ip, 40);
+    if (this.lockedUser !== id.user.id) {
+      await this.limit("passkey/ip", ctx.ip, 40);
+      return this.withIdentity(ctx, false, (auth) =>
+        auth.confirmationOptions(ctx),
+      );
+    }
     const factors = await this.db("nodepass_factors").where({
       userId: id.user.id,
       kind: "passkey",
@@ -662,10 +741,9 @@ export class Auth {
       const response = data.response;
       if (!response || typeof response !== "object" || Array.isArray(response))
         throw new BadRequest("Invalid response");
-      const challenge = text(data, "challenge");
       const credentialId = text(response as Row, "id", 1024);
       const pending = await this.consume(
-        challenge,
+        text(data, "challenge"),
         "passkey-confirm",
         id.user.id,
         id.session.id,
@@ -692,14 +770,16 @@ export class Auth {
         throw this.invalidConfirmation();
     }
     // Recheck expiry/revocation after expensive authentication; never recreate a session.
-    const current = await this.identity(ctx);
-    if (current.session.id !== id.session.id)
-      throw new NotAuthenticated("Session changed");
-    const changed = await this.db("nodepass_sessions")
-      .where({ id: id.session.id, userId: id.user.id, complete: 1 })
-      .update({ verifiedAt: Date.now() });
-    if (!changed) throw new NotAuthenticated("Session expired");
-    ctx.body = { confirmed: true };
+    await this.withIdentity(ctx, false, async (auth, current) => {
+      if (current.session.id !== id.session.id)
+        throw new NotAuthenticated("Session changed");
+      const changed = await auth
+        .db("nodepass_sessions")
+        .where({ id: id.session.id, userId: id.user.id, complete: 1 })
+        .update({ verifiedAt: Date.now() });
+      if (!changed) throw new NotAuthenticated("Session expired");
+      ctx.body = { confirmed: true };
+    });
   }
   private async enrollment(identity: RequestIdentity): Promise<void> {
     if (identity.session.complete) {
@@ -714,6 +794,8 @@ export class Auth {
   }
   async totpStart(ctx: Context): Promise<void> {
     const id = await this.identity(ctx, true);
+    if (this.lockedUser !== id.user.id)
+      return this.withIdentity(ctx, true, (auth) => auth.totpStart(ctx));
     await this.enrollment(id);
     const existing = await this.db("nodepass_factors")
       .where({ userId: id.user.id, kind: "totp", confirmed: 1 })
@@ -761,7 +843,9 @@ export class Auth {
     });
     const delta = otp.validate({ token: text(data, "code", 6), window: 1 });
     if (delta === null) throw new NotAuthenticated("Invalid code");
-    await this.db.transaction(async (trx) => {
+    await this.withIdentity(ctx, true, async (auth, current) => {
+      await auth.enrollment(current);
+      const trx = auth.db;
       if (
         await trx("nodepass_factors")
           .where({ userId: id.user.id, kind: "totp", confirmed: 1 })
@@ -779,20 +863,33 @@ export class Auth {
         confirmed: 1,
       });
       await trx("nodepass_sessions").where({ userId: id.user.id }).delete();
+      const state = await authState(trx, id.user.id);
+      await saveAuthState(trx, id.user.id, {
+        ...state,
+        enrollmentRequired: false,
+      });
+      await auth.complete(ctx, current.user);
+      await audit(trx, id.user.id, "auth.totp.enroll");
     });
-    await this.complete(ctx, id.user);
-    await audit(this.db, id.user.id, "auth.totp.enroll");
   }
   async totpVerify(ctx: Context): Promise<void> {
     const id = await this.identity(ctx, true),
       data = body(ctx);
     exact(data, ["code"]);
     await this.limit("totp", String(id.user.id), 5, 300000);
-    if (!(await this.verifyCode(id.user.id, text(data, "code", 100))))
-      throw new NotAuthenticated("Invalid code");
-    await this.complete(ctx, id.user);
+    await this.withIdentity(ctx, true, async (auth, current) => {
+      if (!(await auth.verifyCode(current.user.id, text(data, "code", 100))))
+        throw new NotAuthenticated("Invalid code");
+      await auth.complete(ctx, current.user);
+    });
   }
   private async verifyCode(userId: number, code: string): Promise<boolean> {
+    if (this.lockedUser !== userId) {
+      const { revision } = await authState(this.db, userId);
+      return this.withUser(userId, revision, (auth) =>
+        auth.verifyCode(userId, code),
+      );
+    }
     return this.db.transaction(async (trx) => {
       const factors = await trx("nodepass_factors")
         .where({ userId, confirmed: 1 })
@@ -830,6 +927,10 @@ export class Auth {
   async passkeyOptions(ctx: Context, register: boolean): Promise<void> {
     if (register) {
       const id = await this.identity(ctx, true);
+      if (this.lockedUser !== id.user.id)
+        return this.withIdentity(ctx, true, (auth) =>
+          auth.passkeyOptions(ctx, true),
+        );
       await this.enrollment(id);
       const existing = await this.db("nodepass_factors").where({
         userId: id.user.id,
@@ -897,23 +998,34 @@ export class Auth {
       if (!result.verified || !result.registrationInfo)
         throw new NotAuthenticated("Passkey registration failed");
       const c = result.registrationInfo.credential;
-      await this.db("nodepass_factors").insert({
-        userId: id.user.id,
-        kind: "passkey",
-        credentialId: c.id,
-        credentialHash: digest(c.id),
-        name:
-          typeof data.name === "string" ? data.name.slice(0, 100) : "Passkey",
-        data: JSON.stringify({
-          publicKey: Buffer.from(c.publicKey).toString("base64"),
-          transports: c.transports,
-        }),
-        counter: c.counter,
-        confirmed: 1,
+      await this.withIdentity(ctx, true, async (auth, current) => {
+        await auth.enrollment(current);
+        await auth.db("nodepass_factors").insert({
+          userId: id.user.id,
+          kind: "passkey",
+          credentialId: c.id,
+          credentialHash: digest(c.id),
+          name:
+            typeof data.name === "string" ? data.name.slice(0, 100) : "Passkey",
+          data: JSON.stringify({
+            publicKey: Buffer.from(c.publicKey).toString("base64"),
+            transports: c.transports,
+          }),
+          counter: c.counter,
+          confirmed: 1,
+        });
+        await auth
+          .db("nodepass_sessions")
+          .where({ userId: id.user.id })
+          .delete();
+        const state = await authState(auth.db, id.user.id);
+        await saveAuthState(auth.db, id.user.id, {
+          ...state,
+          enrollmentRequired: false,
+        });
+        await audit(auth.db, id.user.id, "auth.passkey.enroll");
+        await auth.complete(ctx, current.user);
       });
-      await this.db("nodepass_sessions").where({ userId: id.user.id }).delete();
-      await audit(this.db, id.user.id, "auth.passkey.enroll");
-      await this.complete(ctx, id.user);
     } else {
       await this.limit("passkey/ip", ctx.ip, 40);
       const pending = await this.consume(
@@ -929,18 +1041,26 @@ export class Auth {
         })
         .first();
       if (!factor) throw new NotAuthenticated("Invalid passkey");
-      const user = await this.user(factor.userId);
-      if (user.isLdap && !(await this.directory(user)))
-        throw new NotAuthenticated("Directory access denied");
-      if (
-        !(await this.verifyPasskey(
-          factor,
-          response as AuthenticationResponseJSON,
-          pending.challenge,
-        ))
-      )
-        throw new NotAuthenticated("Invalid passkey");
-      await this.complete(ctx, user);
+      const { revision } = await authState(this.db, factor.userId);
+      await this.withUser(factor.userId, revision, async (auth) => {
+        const current = await auth
+          .db("nodepass_factors")
+          .where({ id: factor.id, kind: "passkey", confirmed: 1 })
+          .first();
+        if (!current) throw new NotAuthenticated("Invalid passkey");
+        const user = await auth.user(factor.userId);
+        if (user.isLdap && !(await auth.directory(user)))
+          throw new NotAuthenticated("Directory access denied");
+        if (
+          !(await auth.verifyPasskey(
+            current,
+            response as AuthenticationResponseJSON,
+            pending.challenge,
+          ))
+        )
+          throw new NotAuthenticated("Invalid passkey");
+        await auth.complete(ctx, user);
+      });
     }
   }
   private async verifyPasskey(
@@ -948,6 +1068,7 @@ export class Auth {
     response: AuthenticationResponseJSON,
     challenge: string,
   ): Promise<boolean> {
+    const { revision } = await authState(this.db, factor.userId);
     const credential = JSON.parse(factor.data);
     const result = await verifyAuthenticationResponse({
       response: response as AuthenticationResponseJSON,
@@ -963,13 +1084,33 @@ export class Auth {
       },
     }).catch(() => null);
     if (!result?.verified) return false;
-    const changed = await this.db("nodepass_factors")
-      .where({ id: factor.id, counter: factor.counter })
-      .update({ counter: result.authenticationInfo.newCounter });
-    return changed > 0;
+    const updateCounter = async (auth: Auth) => {
+      const current = await auth
+        .db("nodepass_factors")
+        .where({
+          id: factor.id,
+          userId: factor.userId,
+          kind: "passkey",
+          confirmed: 1,
+        })
+        .forUpdate()
+        .first();
+      if (!current || Number(current.counter) !== Number(factor.counter))
+        return false;
+      const changed = await auth
+        .db("nodepass_factors")
+        .where({ id: factor.id, counter: factor.counter })
+        .update({ counter: result.authenticationInfo.newCounter });
+      return changed > 0;
+    };
+    return this.lockedUser === factor.userId
+      ? updateCounter(this)
+      : this.withUser(factor.userId, revision, updateCounter);
   }
   async recovery(ctx: Context): Promise<void> {
     const id = await this.identity(ctx);
+    if (this.lockedUser !== id.user.id)
+      return this.withIdentity(ctx, false, (auth) => auth.recovery(ctx));
     this.requireRecent(id);
     const codes = Array.from({ length: 10 }, () => token().slice(0, 20));
     await this.db.transaction(async (trx) => {
@@ -994,8 +1135,37 @@ export class Auth {
     ctx.body = { codes };
     await audit(this.db, id.user.id, "auth.recovery.regenerate");
   }
+  async removeFactor(ctx: Context, factorId: number): Promise<void> {
+    await this.withIdentity(ctx, false, async (auth, id) => {
+      auth.requireRecent(id);
+      const factors = await auth
+        .db("nodepass_factors")
+        .where({ userId: id.user.id, confirmed: 1 })
+        .whereNot("kind", "recovery")
+        .forUpdate();
+      if (!factors.some((factor) => factor.id === factorId))
+        throw new BadRequest("Unknown factor");
+      const policy = await auth.policy();
+      if (
+        factors.length <= 1 &&
+        ((await authState(auth.db, id.user.id)).enrollmentRequired ||
+          policy.mfa === "everyone" ||
+          (policy.mfa === "admins" && isAdmin(id.user)))
+      )
+        throw new Forbidden("Enroll a replacement factor first");
+      await auth
+        .db("nodepass_factors")
+        .where({ id: factorId, userId: id.user.id })
+        .delete();
+      await auth.db("nodepass_sessions").where({ userId: id.user.id }).delete();
+      await audit(auth.db, id.user.id, "auth.factor.remove", factorId);
+    });
+    ctx.status = 204;
+  }
   async logout(ctx: Context): Promise<void> {
     const id = await this.identity(ctx, true);
+    if (this.lockedUser !== id.user.id)
+      return this.withIdentity(ctx, true, (auth) => auth.logout(ctx));
     await this.db("nodepass_sessions").where({ id: id.session.id }).delete();
     ctx.cookies.set("nodepass", "", { path: "/", maxAge: 0, overwrite: true });
     await audit(this.db, id.user.id, "auth.logout");

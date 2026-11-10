@@ -22,6 +22,7 @@ export const languages = [
 export type Language = (typeof languages)[number];
 export type MfaPolicy = "optional" | "admins" | "everyone";
 export type ConfirmationMethod = "password" | "totp" | "recovery" | "passkey";
+export type MfaMethod = Exclude<ConfirmationMethod, "password">;
 export interface ConfirmationMethods {
   methods: ConfirmationMethod[];
 }
@@ -52,12 +53,15 @@ export interface Viewer {
   view?: "list" | "cards";
   language: Language;
   needsMfa: boolean;
+  mfaMethods: MfaMethod[];
+  mfaResetPending: boolean;
   csrf: string;
   permissions: Record<string, boolean>;
 }
 export interface UserManagement {
   canEdit: boolean;
   canResetPassword: boolean;
+  canResetTotp: boolean;
   reason?: "permission" | "self" | "administrator" | "groups" | "profile";
 }
 export interface GroupReference {

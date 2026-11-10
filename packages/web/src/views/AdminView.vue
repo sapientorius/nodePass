@@ -32,6 +32,7 @@ import NModal from "../components/AccessibleModal.vue";
 import CustomFieldEditor from "../components/CustomFieldEditor.vue";
 import FieldHelp from "../components/FieldHelp.vue";
 import MembersDialog from "../components/MembersDialog.vue";
+import TotpResetDialog from "../components/TotpResetDialog.vue";
 import { orderedGroups, sortedAdminRows } from "../admin-table";
 import { profilePermissionGroups } from "../profile-permissions";
 export default defineComponent({
@@ -39,6 +40,7 @@ export default defineComponent({
     return { message: useMessage() };
   },
   components: {
+    TotpResetDialog,
     MembersDialog,
     FieldHelp,
     CustomFieldEditor,
@@ -84,6 +86,7 @@ export default defineComponent({
       name: string;
     } | null,
     loadRevision: 0,
+    totpResetTarget: null as { id: number; name: string; login: string } | null,
   }),
   computed: {
     tableSort(): { field: string; direction: "asc" | "desc" } {
@@ -353,6 +356,30 @@ export default defineComponent({
                       },
                       { default: () => this.$t("edit") },
                     ),
+                    ...(this.section === "users" &&
+                    useSession().viewer?.isAppAdmin &&
+                    row.management?.canResetTotp
+                      ? [
+                          h(
+                            NButton,
+                            {
+                              size: "small",
+                              quaternary: true,
+                              type: "warning",
+                              "data-totp-reset-user": row.id,
+                              disabled: !!this.totpResetTarget,
+                              onClick: () => {
+                                this.totpResetTarget = {
+                                  id: row.id,
+                                  name: row.name,
+                                  login: row.login,
+                                };
+                              },
+                            },
+                            { default: () => this.$t("totpReset") },
+                          ),
+                        ]
+                      : []),
                     ...(!this.rowEditable(row)
                       ? [
                           h(
@@ -400,6 +427,7 @@ export default defineComponent({
   },
   watch: {
     accessEpoch() {
+      this.totpResetTarget = null;
       this.loadRevision++;
       this.membersTarget = null;
       this.groups = [];
@@ -419,12 +447,14 @@ export default defineComponent({
     section: {
       immediate: true,
       handler() {
+        this.totpResetTarget = null;
         this.membersTarget = null;
         void this.load();
       },
     },
   },
   beforeUnmount() {
+    this.totpResetTarget = null;
     this.loadRevision++;
     this.membersTarget = null;
     this.active = false;
@@ -433,6 +463,16 @@ export default defineComponent({
     this.rows = [];
   },
   methods: {
+    async closeTotpReset(reload = false) {
+      const id = this.totpResetTarget?.id;
+      this.totpResetTarget = null;
+      if (reload) await this.load();
+      await this.$nextTick();
+      if (id && this.active && this.section === "users")
+        (this.$el as HTMLElement)
+          .querySelector<HTMLButtonElement>(`[data-totp-reset-user="${id}"]`)
+          ?.focus();
+    },
     setTableSort(field: string, direction: "asc" | "desc") {
       void this.$router.replace({
         query: { ...this.$route.query, sort: field, direction },
@@ -838,6 +878,15 @@ export default defineComponent({
         @update:sorter="changeTableSort"
       />
     </div>
+    <TotpResetDialog
+      v-if="
+        totpResetTarget && session().viewer?.isAppAdmin && section === 'users'
+      "
+      :key="totpResetTarget.id"
+      :target="totpResetTarget"
+      @close="closeTotpReset()"
+      @reset="closeTotpReset(true)"
+    />
     <MembersDialog
       v-if="membersTarget && canReadMembers && section === membersTarget.kind"
       :target="membersTarget"
