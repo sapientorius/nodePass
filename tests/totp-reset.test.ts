@@ -470,15 +470,15 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
     });
     it("rechecks a queued actor's role after the management lock is released", async () => {
       const params = await r.params();
-      let pending!: Promise<void>;
+      let denied!: Promise<void>;
       await r.db.transaction(async (trx) => {
         await lockUserManagement(trx);
         await trx("User").where({ id: 1 }).update({ isAdminApp: 0 });
-        pending = resetTotp(r.db, r.auth, target, params);
+        denied = expect(resetTotp(r.db, r.auth, target, params)).rejects.toThrow(
+          "Application administrator required",
+        );
       });
-      await expect(pending).rejects.toThrow(
-        "Application administrator required",
-      );
+      await denied;
       expect((await authState(r.db, target)).revision).toBe(0);
     });
     it("permits resetting another admin and a disabled user without enabling them", async () => {
