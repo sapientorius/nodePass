@@ -88,6 +88,10 @@ Stop writes and application processes, take a backup under the old key, prepare 
 
 ## Factor-loss recovery
 
+An application administrator who can still sign in can open **Users**, select **Reset 2FA app** beside the affected user and confirm the named target and consequences. If requested, confirm the administrator's own identity using the existing confirmation dialog. The reset removes the user's authenticator registration and all recovery codes and signs out every browser session. Existing passkeys remain usable. Without one, the user signs in with their normal password or SSO and must confirm a new authenticator app or passkey before opening the vault, regardless of the global MFA setting. They can then generate fresh recovery codes in their personal security settings. Repeating the reset also invalidates pending enrollment sessions. The audit event is `users.totp.reset`.
+
+Only application administrators can reset another user; account administrators and delegated user managers cannot. Disabled users remain disabled. An administrator cannot reset their own app here. If the only application administrator is locked out, use the offline procedure below.
+
 First use a second passkey or a one-time recovery code. The UI protects the last mandatory factor. If none remains, an authorized operator with exclusive deployment access can perform the audited recovery process; there is no hidden recovery login.
 
 Stop the application. Mount a protected JSON file with `login`, a valid local administrator `password`, `maintenance: true` and `reason: "factor-loss"`. Run `recover-factor --input FILE`. It revokes sessions and writes a one-time code to an app-user-only `operator-recovery-*.txt` file in the data directory; output includes only its path. Existing factors remain enrolled. Restart, sign in with the password, select recovery codes and enter that code. Immediately enroll a replacement factor and remove input/code files. The procedure requires the deployment key, DB access and valid local administrator credentials.

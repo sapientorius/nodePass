@@ -221,7 +221,8 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
       await expect(r.auth.user(99999)).rejects.toThrow();
     });
     it("enforces one-use, expiry, session and user binding for encrypted challenges", async () => {
-      const challenge = await r.auth.challenge(1, "session", "test", {
+      const sessionId = (await issue(true)).session.id;
+      const challenge = await r.auth.challenge(1, sessionId, "test", {
         secret: "private value",
       });
       const stored = await r
@@ -230,13 +231,13 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
         .first();
       expect(stored.value).not.toContain("private value");
       await expect(
-        r.auth.consume(challenge, "test", 2, "session"),
+        r.auth.consume(challenge, "test", 2, sessionId),
       ).rejects.toThrow();
       await expect(
         r.auth.consume(challenge, "test", 1, "other"),
       ).rejects.toThrow();
       expect(
-        (await r.auth.consume(challenge, "test", 1, "session")).secret,
+        (await r.auth.consume(challenge, "test", 1, sessionId)).secret,
       ).toBe("private value");
       await expect(r.auth.consume(challenge, "test")).rejects.toThrow();
       const expired = await r.auth.challenge(null, null, "test", {});

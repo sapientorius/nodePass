@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { defaultPolicy } from "@nodepass/contracts";
 import { putSetting } from "../packages/server/src/db.js";
 import { digest } from "../packages/server/src/security/crypto.js";
+import { Auth } from "../packages/server/src/security/auth.js";
 
 const verification = vi.hoisted(() => vi.fn());
 vi.mock("@simplewebauthn/server", async (original) => ({
@@ -235,7 +236,7 @@ describe.skipIf(process.env.NODEPASS_INTEGRATION !== "1")(
     it("verifies directory passwords through the directory and never the local hash", async () => {
       await runtime.db("User").where({ id: 1 }).update({ isLdap: 1 });
       const directory = vi
-        .spyOn(runtime.auth, "directory")
+        .spyOn(Auth.prototype, "directory")
         .mockImplementation(
           async (_user, password) =>
             password === undefined ||

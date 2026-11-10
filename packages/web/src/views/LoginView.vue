@@ -74,6 +74,22 @@ export default defineComponent({
     pending() {
       return this.sessionStore.viewer?.phase;
     },
+    mfaMethods() {
+      return this.sessionStore.viewer?.mfaMethods ?? ["totp", "recovery"];
+    },
+    useRecovery() {
+      return (
+        this.pending === "verify" &&
+        (this.recoveryMode ||
+          (!this.mfaMethods.includes("totp") &&
+            this.mfaMethods.includes("recovery")))
+      );
+    },
+    canVerifyCode() {
+      return (
+        this.mfaMethods.includes("totp") || this.mfaMethods.includes("recovery")
+      );
+    },
     isSetup() {
       return this.sessionStore.setupRequired;
     },
@@ -104,6 +120,14 @@ export default defineComponent({
   },
   mounted() {
     if (this.sessionStore.legacy) this.mode = "migrate";
+  },
+  watch: {
+    "sessionStore.viewer.csrf"() {
+      this.password = "";
+      this.code = "";
+      this.recoveryMode = false;
+      this.enrollment = null;
+    },
   },
   beforeUnmount() {
     this.closed = true;
@@ -457,13 +481,23 @@ export default defineComponent({
                 ? $t(
                     pending === "enroll"
                       ? "enroll"
-                      : recoveryMode
-                        ? "mfaRecoveryHelp"
-                        : "mfaTotpHelp",
+                      : !canVerifyCode
+                        ? "passkey"
+                        : useRecovery
+                          ? "mfaRecoveryHelp"
+                          : "mfaTotpHelp",
                   )
                 : $t("loginHelp")
           }}
         </p>
+        <n-alert
+          v-if="sessionStore.viewer?.mfaResetPending"
+          type="info"
+          class="enrollment"
+          role="status"
+        >
+          {{ $t("totpResetPending") }}
+        </n-alert>
         <template v-if="isSetup"
           ><n-tabs
             :value="mode"
@@ -667,19 +701,29 @@ export default defineComponent({
                 height="200"
               /><code>{{ enrollment.secret }}</code>
             </div></template
-          ><n-form
-            v-if="pending === 'verify' || enrollment"
+          ><n-button
+            v-if="pending === 'verify' && mfaMethods.includes('passkey')"
+            type="primary"
+            block
+            size="large"
+            :loading="busy"
+            :disabled="busy"
+            @click="passkey(false)"
+            >{{ $t("passkey") }}</n-button
+          >
+          <n-form
+            v-if="(pending === 'verify' && canVerifyCode) || enrollment"
             @submit.prevent="finishTotp"
-            ><n-form-item :label="$t(recoveryMode ? 'recoveryCodes' : 'code')"
+            ><n-form-item :label="$t(useRecovery ? 'recoveryCodes' : 'code')"
               ><n-input
                 ref="verificationInput"
                 v-model:value="code"
                 :disabled="busy"
-                :maxlength="recoveryMode ? 100 : 6"
+                :maxlength="useRecovery ? 100 : 6"
                 autocomplete="one-time-code"
                 :input-props="{
-                  inputmode: recoveryMode ? 'text' : 'numeric',
-                  'aria-label': $t(recoveryMode ? 'recoveryCodes' : 'code'),
+                  inputmode: useRecovery ? 'text' : 'numeric',
+                  'aria-label': $t(useRecovery ? 'recoveryCodes' : 'code'),
                   'aria-describedby': 'auth-description',
                 }" /></n-form-item
             ><n-button
@@ -700,7 +744,14 @@ export default defineComponent({
             @click="backToLogin"
             >{{ $t("backToLogin") }}</n-button
           >
-          <div v-if="pending === 'verify'" class="auth-recovery-option">
+          <div
+            v-if="
+              pending === 'verify' &&
+              mfaMethods.includes('totp') &&
+              mfaMethods.includes('recovery')
+            "
+            class="auth-recovery-option"
+          >
             <n-button
               text
               size="small"

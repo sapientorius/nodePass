@@ -36,6 +36,7 @@ export function openApi(
       if (["HEAD", "OPTIONS"].includes(method)) continue;
       const write = !["GET", "HEAD"].includes(method),
         users = path === "/api/v1/users" || path === "/api/v1/users/{id}",
+        totpReset = path === "/api/v1/users/{id}/totp-reset",
         groupMembers = path === "/api/v1/groups/{id}/members",
         profileMembers = path === "/api/v1/profiles/{id}/members",
         members = groupMembers || profileMembers,
@@ -212,7 +213,7 @@ export function openApi(
                                         },
                                       },
                                     }
-                                  : path === "/api/v1/backup-jobs"
+                                  : path === "/api/v1/backup-jobs" || totpReset
                                     ? {
                                         type: "object",
                                         additionalProperties: false,
@@ -231,12 +232,14 @@ export function openApi(
             }
           : {}),
         responses: {
-          "200": {
-            description: groupMembers
-              ? "Group members, ordered by name, login and ID. Requires application administrator status or mgmUsers. Includes disabled users; additional memberships exclude the primary group."
-              : profileMembers
-                ? "Users assigned to this profile, ordered by name, login and ID. Requires application administrator status or mgmUsers. Includes disabled users."
-                : "Operation completed; responses never include password hashes or vault keys.",
+          [totpReset ? "204" : "200"]: {
+            description: totpReset
+              ? "Application administrators only, with confirmation within five minutes; self-reset is denied. Removes TOTP and recovery codes, revokes sessions and user-bound challenges, retains passkeys and requires enrollment if none remain."
+              : groupMembers
+                ? "Group members, ordered by name, login and ID. Requires application administrator status or mgmUsers. Includes disabled users; additional memberships exclude the primary group."
+                : profileMembers
+                  ? "Users assigned to this profile, ordered by name, login and ID. Requires application administrator status or mgmUsers. Includes disabled users."
+                  : "Operation completed; responses never include password hashes or vault keys.",
             ...(members
               ? {
                   content: {
@@ -388,9 +391,14 @@ export function openApi(
         UserManagement: {
           type: "object",
           readOnly: true,
-          required: ["canEdit", "canResetPassword"],
+          required: ["canEdit", "canResetPassword", "canResetTotp"],
           properties: {
             canEdit: { type: "boolean" },
+            canResetTotp: {
+              type: "boolean",
+              description:
+                "Only application administrators may reset another user's authenticator app.",
+            },
             canResetPassword: {
               type: "boolean",
               description:

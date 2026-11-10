@@ -22,6 +22,7 @@ import { accountAccessMessages } from "./account-access-translations";
 import { userManagementMessages } from "./user-management-translations";
 import { backupMessages } from "./backup-translations";
 import { mfaMessages } from "./mfa-translations";
+import { totpResetMessages } from "./totp-reset-translations";
 export const languageOptions = [
   { label: "Deutsch", value: "de_DE" },
   { label: "English", value: "en_US" },
@@ -119,6 +120,7 @@ export const messages = Object.fromEntries(
         ...eventMessages[locale],
         ...transferMessages[locale],
         ...mfaMessages[locale],
+        ...totpResetMessages[locale],
         backToLogin: backToLoginLabels[locale as Language],
       },
     ];
